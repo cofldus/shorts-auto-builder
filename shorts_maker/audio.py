@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
-import tempfile
 
 from .script_parser import Segment
 from .utils import ValidationError, probe_media_duration, run_command
@@ -22,8 +22,7 @@ def _has_narration(seg: Segment) -> bool:
     return bool(seg.narration and seg.narration.strip())
 
 
-def generate_tts(segment_text: str, voice: str, lang: str, out_wav_path: Path) -> None:
-    del lang  # reserved for future voice auto-selection
+def _generate_tts_edge(segment_text: str, voice: str, out_wav_path: Path) -> None:
     try:
         import asyncio
         import edge_tts
@@ -31,11 +30,6 @@ def generate_tts(segment_text: str, voice: str, lang: str, out_wav_path: Path) -
         raise ValidationError(
             "edge-tts is required for --voice edge. Install dependencies from requirements.txt."
         ) from exc
-
-    if not segment_text.strip():
-        raise ValidationError("Cannot generate TTS for empty narration text")
-
-    out_wav_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def _save() -> None:
         communicate = edge_tts.Communicate(text=segment_text, voice=voice)
@@ -49,6 +43,61 @@ def generate_tts(segment_text: str, voice: str, lang: str, out_wav_path: Path) -
             loop.run_until_complete(_save())
         finally:
             loop.close()
+
+
+def _generate_tts_openai(segment_text: str, voice: str, lang: str, out_wav_path: Path) -> None:
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise ValidationError("openai 패키지가 필요합니다. requirements.txt를 다시 설치하세요.") from exc
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValidationError("OPENAI_API_KEY 환경 변수가 필요합니다.")
+
+    voice_name = voice if "-" not in voice else "alloy"
+    model_name = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+    guidance = f"Speak naturally in {lang}. Keep a warm and clear tone."
+
+    client = OpenAI(api_key=api_key)
+    try:
+        with client.audio.speech.with_streaming_response.create(
+            model=model_name,
+            voice=voice_name,
+            input=segment_text,
+            response_format="wav",
+            instructions=guidance,
+        ) as response:
+            response.stream_to_file(str(out_wav_path))
+    except Exception as exc:
+        raise ValidationError(f"OpenAI TTS 생성 실패: {exc}") from exc
+
+
+def generate_tts(
+    segment_text: str,
+    mode: str,
+    voice: str,
+    lang: str,
+    out_wav_path: Path,
+) -> None:
+    if not segment_text.strip():
+        raise ValidationError("Cannot generate TTS for empty narration text")
+
+    out_wav_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if mode == "edge":
+        _generate_tts_edge(segment_text=segment_text, voice=voice, out_wav_path=out_wav_path)
+        return
+    if mode == "openai":
+        _generate_tts_openai(
+            segment_text=segment_text,
+            voice=voice,
+            lang=lang,
+            out_wav_path=out_wav_path,
+        )
+        return
+
+    raise ValidationError(f"Unsupported voice mode for TTS generation: {mode}")
 
 
 def _time_stretch_and_fit(
@@ -95,6 +144,7 @@ def _build_narration_track(
     ffprobe_bin: str,
     segments: list[Segment],
     duration: float,
+    voice_mode: str,
     voice: str,
     voice_lang: str,
     work_dir: Path,
@@ -108,7 +158,13 @@ def _build_narration_track(
         raw_wav = work_dir / f"tts_raw_{idx:04d}.wav"
         fitted_wav = work_dir / f"tts_fit_{idx:04d}.wav"
 
-        generate_tts(seg.narration or "", voice=voice, lang=voice_lang, out_wav_path=raw_wav)
+        generate_tts(
+            seg.narration or "",
+            mode=voice_mode,
+            voice=voice,
+            lang=voice_lang,
+            out_wav_path=raw_wav,
+        )
         warning = _time_stretch_and_fit(
             ffmpeg_bin=ffmpeg_bin,
             ffprobe_bin=ffprobe_bin,
@@ -220,8 +276,9 @@ def build_final_audio_track(
     narration = _build_narration_track(
         ffmpeg_bin=ffmpeg_bin,
         ffprobe_bin=ffprobe_bin,
-        segments=segments if voice_mode == "edge" else [],
+        segments=segments if voice_mode in {"edge", "openai"} else [],
         duration=duration,
+        voice_mode=voice_mode,
         voice=voice_voice,
         voice_lang=voice_lang,
         work_dir=work_dir,
@@ -235,7 +292,7 @@ def build_final_audio_track(
         raise ValidationError(f"BGM file not found: {bgm}")
 
     narration_ranges = [(seg.start, seg.end) for seg in segments if _has_narration(seg)]
-    has_narration = bool(narration_ranges and voice_mode == "edge")
+    has_narration = bool(narration_ranges and voice_mode != "none")
     duck_gain = 10 ** ((-12 if has_narration else -10) / 20)
     volume_expr = _build_duck_volume_expression(
         narration_ranges=narration_ranges,

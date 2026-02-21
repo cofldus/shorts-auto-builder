@@ -7,7 +7,7 @@
 - 스크립트 기반 쇼츠 생성 (`start/end/subtitle/narration`)
 - 자막(ASS) 생성 및 번인 렌더링
 - 배경음악(BGM) 루프, 트림, 내레이션 구간 덕킹
-- TTS 내레이션 생성 (`--voice edge`)
+- TTS 내레이션 생성 (`--voice edge`, `--voice openai`)
 
 ## 설치
 
@@ -62,13 +62,20 @@ python -m shorts_maker --script script.txt --assets assets --out output.mp4 --vo
 python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice edge --voice-lang ko-KR --voice-voice ko-KR-SunHiNeural
 ```
 
+### 최소 실행 예시 3: OpenAI TTS 사용
+
+```bash
+set OPENAI_API_KEY=your_api_key
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice openai --voice-lang ko-KR --voice-voice alloy
+```
+
 ## 옵션 설명
 
 - `--duration` (기본 30): 전체 길이(초)
 - `--size` (기본 1080x1920): 출력 해상도
 - `--fps` (기본 30): 프레임레이트
 - `--bgm`: 배경음악 파일 경로
-- `--voice`: `none` 또는 `edge`
+- `--voice`: `none`, `edge`, `openai`
 - `--voice-lang`: TTS 언어 코드
 - `--voice-voice`: TTS 화자 이름
 - `--font`: 자막 폰트 파일 경로
@@ -101,4 +108,5 @@ ffmpeg -hide_banner -filters
 ### TTS 이슈
 
 - `--voice edge` 사용 시 네트워크 상태에 따라 생성 속도가 느릴 수 있습니다.
+- `--voice openai` 사용 시 `OPENAI_API_KEY` 환경 변수가 필요합니다.
 - 모듈 오류가 나면 의존성을 다시 설치하세요.

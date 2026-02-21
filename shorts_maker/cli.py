@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from .render import render_video
@@ -31,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--size", type=parse_size, default=(1080, 1920))
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--bgm", default=None, help="Optional BGM path")
-    parser.add_argument("--voice", choices=["none", "edge"], default="none")
+    parser.add_argument("--voice", choices=["none", "edge", "openai"], default="none")
     parser.add_argument("--voice-lang", default="ko-KR")
     parser.add_argument("--voice-voice", default="ko-KR-SunHiNeural")
     parser.add_argument("--font", default=None, help="Optional subtitle font path (reserved)")
@@ -63,6 +64,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValidationError(f"BGM file not found: {args.bgm}")
     if args.font and not Path(args.font).exists():
         raise ValidationError(f"Font file not found: {args.font}")
+    if args.voice == "openai" and not os.getenv("OPENAI_API_KEY"):
+        raise ValidationError("--voice openai 사용 시 OPENAI_API_KEY 환경 변수가 필요합니다.")
 
 
 def main(argv: list[str] | None = None) -> int:
