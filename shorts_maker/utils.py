@@ -73,6 +73,25 @@ def probe_media_duration(ffprobe_bin: str, path: Path) -> float:
         raise ValidationError(f"Invalid duration from ffprobe for file: {path}") from exc
 
 
+def media_has_audio_stream(ffprobe_bin: str, path: Path) -> bool:
+    cmd = [
+        ffprobe_bin,
+        "-v",
+        "error",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    result = run_command(cmd, capture_output=True)
+    if result is None:
+        return False
+    return bool(result.stdout.strip())
+
+
 def ffmpeg_has_filter(ffmpeg_bin: str, filter_name: str) -> bool:
     result = run_command([ffmpeg_bin, "-hide_banner", "-filters"], capture_output=True)
     if result is None:

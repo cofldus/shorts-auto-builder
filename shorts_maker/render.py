@@ -7,7 +7,7 @@ from .assets import is_video, scan_assets, select_assets_for_segments
 from .audio import build_final_audio_track, mux_audio_with_video
 from .script_parser import Segment
 from .subtitles import apply_subtitles_to_video, generate_ass_subtitles
-from .utils import ValidationError, preflight_check, run_command
+from .utils import ValidationError, media_has_audio_stream, preflight_check, run_command
 
 
 def _build_size_filters(size: tuple[int, int]) -> str:
@@ -57,6 +57,7 @@ def _render_black_segment(
 
 def _render_video_segment(
     ffmpeg_bin: str,
+    ffprobe_bin: str,
     source: Path,
     out_path: Path,
     duration: float,
@@ -64,36 +65,66 @@ def _render_video_segment(
     fps: int,
 ) -> None:
     vf = _build_size_filters(size)
-    cmd = [
-        ffmpeg_bin,
-        "-y",
-        "-stream_loop",
-        "-1",
-        "-i",
-        str(source),
-        "-f",
-        "lavfi",
-        "-t",
-        f"{duration}",
-        "-i",
-        "anullsrc=channel_layout=stereo:sample_rate=48000",
-        "-shortest",
-        "-t",
-        f"{duration}",
-        "-vf",
-        vf,
-        "-r",
-        str(fps),
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        str(out_path),
-    ]
+    if media_has_audio_stream(ffprobe_bin, source):
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-shortest",
+            "-t",
+            f"{duration}",
+            "-vf",
+            vf,
+            "-r",
+            str(fps),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(out_path),
+        ]
+    else:
+        cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(source),
+            "-f",
+            "lavfi",
+            "-t",
+            f"{duration}",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-shortest",
+            "-t",
+            f"{duration}",
+            "-vf",
+            vf,
+            "-r",
+            str(fps),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(out_path),
+        ]
     run_command(cmd)
 
 
@@ -149,6 +180,7 @@ def _render_image_segment(
 
 def _render_segment_clip(
     ffmpeg_bin: str,
+    ffprobe_bin: str,
     asset: Path,
     out_path: Path,
     duration: float,
@@ -156,7 +188,7 @@ def _render_segment_clip(
     fps: int,
 ) -> None:
     if is_video(asset):
-        _render_video_segment(ffmpeg_bin, asset, out_path, duration, size, fps)
+        _render_video_segment(ffmpeg_bin, ffprobe_bin, asset, out_path, duration, size, fps)
     else:
         _render_image_segment(ffmpeg_bin, asset, out_path, duration, size, fps)
 
@@ -238,7 +270,7 @@ def render_video(
 
             asset = chosen_assets[i]
             seg_clip = tmp / f"clip_seg_{i:04d}.mp4"
-            _render_segment_clip(ffmpeg_bin, asset, seg_clip, seg_dur, size, fps)
+            _render_segment_clip(ffmpeg_bin, ffprobe_bin, asset, seg_clip, seg_dur, size, fps)
             clips.append(seg_clip)
             timeline_pos += seg_dur
 
@@ -267,6 +299,24 @@ def render_video(
             apply_subtitles_to_video(ffmpeg_bin, base_video, ass_path, subtitle_video)
         else:
             subtitle_video = base_video
+
+        if voice == "none" and not bgm:
+            print(
+                "[warning] --voice none 과 --bgm 미지정 상태입니다. "
+                "원본/에셋 오디오가 없으면 결과가 무음일 수 있습니다."
+            )
+            run_command(
+                [
+                    ffmpeg_bin,
+                    "-y",
+                    "-i",
+                    str(subtitle_video),
+                    "-c",
+                    "copy",
+                    str(out),
+                ]
+            )
+            return
 
         audio_result = build_final_audio_track(
             ffmpeg_bin=ffmpeg_bin,
