@@ -1,113 +1,104 @@
-# shorts-auto-builder
+﻿# shorts-auto-builder
 
-Template-based shorts generator for vertical videos using FFmpeg subprocess calls.
+스크립트와 에셋 폴더를 입력으로 받아 세로형 쇼츠 영상을 자동 생성하는 도구입니다.
 
-## Features
+## 기능 요약
 
-- Script-driven timeline (`script.txt`) with `start/end/subtitle/narration` blocks.
-- Deterministic asset selection (`--seed`) with nested `assets/` support.
-- Video-first asset policy (falls back to images with Ken Burns zoom).
-- ASS subtitle burn-in (`libass`) with safe-margin placement and simple emphasis (`{...}`).
-- Optional Edge TTS narration (`--voice edge`) with timeline alignment and duration fitting.
-- Optional BGM loop/trim and ducking during narration windows.
+- 스크립트 기반 쇼츠 생성 (`start/end/subtitle/narration`)
+- 자막(ASS) 생성 및 번인 렌더링
+- 배경음악(BGM) 루프, 트림, 내레이션 구간 덕킹
+- TTS 내레이션 생성 (`--voice edge`)
 
-## Recommended folder layout
+## 설치
 
-```text
-project/
-  script.txt
-  assets/
-    videos/
-      clip1.mp4
-      clip2.mov
-    images/
-      still1.jpg
-      still2.png
-  audio/
-    bgm.mp3
-```
-
-## Quickstart
-
-### 1) Prerequisites
-
-- Python 3.10+
-- FFmpeg + FFprobe in PATH
-- FFmpeg built with `libass` (`subtitles` filter)
-
-Install Python dependency (only needed for `--voice edge`):
+- Python 3.10+ 권장
+- FFmpeg, FFprobe 설치 및 PATH 등록 필요
+- `ffmpeg -version`, `ffprobe -version` 명령이 터미널에서 동작해야 함
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2) Example script: “직장인 위로 30초”
+## 빠른 시작
+
+```text
+shorts-auto-builder/
+  script.txt
+  assets/
+    clip1.mp4
+    clip2.mp4
+    img1.jpg
+    img2.png
+```
+
+스크립트는 빈 줄로 세그먼트를 구분하며 `key: value` 형식을 사용합니다.
+
+- 필수 키: `start`, `end`
+- 선택 키: `subtitle`, `narration`
+
+예시:
 
 ```txt
-start: 00:00
-end: 00:10
-subtitle: 오늘도 수고한 당신, {정말 잘하고 있어요}.
-narration: 오늘도 수고한 당신, 정말 잘하고 있어요.
+start: 0.0
+end: 6.0
+subtitle: 또 하루가 시작되고
+narration: 아침이 오면, 또 시작이죠.
 
-start: 00:10
-end: 00:20
-subtitle: 잠깐 숨을 고르고, 어깨에 힘을 풀어봐요.
-narration: 잠깐 숨을 고르고, 어깨에 힘을 풀어봐요.
-
-start: 00:20
-end: 00:30
-subtitle: 내일은 더 괜찮아질 거예요. {당신을 응원합니다}.
-narration: 내일은 더 괜찮아질 거예요. 당신을 응원합니다.
+start: 6.0
+end: 15.0
+subtitle: 괜찮은 척,\n하고 있었죠
+narration: 웃으면서 일했지만, 사실은 조금 벅찼죠.
 ```
 
-### 3) Run (fully voiced)
-
-```bash
-python -m shorts_maker \
-  --script script.txt \
-  --assets assets \
-  --out output.mp4 \
-  --duration 30 \
-  --size 1080x1920 \
-  --fps 30 \
-  --voice edge \
-  --voice-lang ko-KR \
-  --voice-voice ko-KR-SunHiNeural \
-  --bgm audio/bgm.mp3 \
-  --subtitle-pos bottom \
-  --safe-margin 0.08 \
-  --fade 0.25 \
-  --seed 42 \
-  --verbose
-```
-
-### 4) Run (no narration)
+### 최소 실행 예시 1: TTS 없이
 
 ```bash
 python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice none
 ```
 
-## Troubleshooting
+### 최소 실행 예시 2: Edge TTS 사용
 
-- **`Required executable not found in PATH: ffmpeg` / `ffprobe`**
-  - Install FFmpeg and ensure both executables are available in PATH.
+```bash
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice edge --voice-lang ko-KR --voice-voice ko-KR-SunHiNeural
+```
 
-- **`FFmpeg subtitles filter is unavailable`**
-  - Your FFmpeg build likely lacks `libass`.
-  - Verify with: `ffmpeg -hide_banner -filters` and check `subtitles` exists.
+## 옵션 설명
 
-- **Font rendering differences**
-  - ASS currently uses system `Arial` default style.
-  - If glyph coverage is poor for Korean on your system, install a Korean-capable font.
+- `--duration` (기본 30): 전체 길이(초)
+- `--size` (기본 1080x1920): 출력 해상도
+- `--fps` (기본 30): 프레임레이트
+- `--bgm`: 배경음악 파일 경로
+- `--voice`: `none` 또는 `edge`
+- `--voice-lang`: TTS 언어 코드
+- `--voice-voice`: TTS 화자 이름
+- `--font`: 자막 폰트 파일 경로
+- `--subtitle-pos`: `bottom` 또는 `center`
+- `--safe-margin`: 자막 안전 여백 비율 (`0 <= x < 0.5`)
+- `--fade`: 장면 전환 페이드 시간(초)
+- `--seed`: 에셋 선택 재현용 시드
+- `--verbose`: FFmpeg/FFprobe 실행 로그 출력
 
-- **Windows subtitle path errors**
-  - This project escapes subtitle paths for FFmpeg filter usage.
-  - Prefer normal paths (avoid unusual quoting in shell wrappers).
+## 트러블슈팅
 
-- **`--voice edge` fails with missing module**
-  - Install dependency: `pip install -r requirements.txt`.
+### FFmpeg/libass 관련
 
-## Exit behavior
+- 자막 번인에는 FFmpeg `subtitles` 필터(`libass`)가 필요합니다.
+- 필터 확인:
 
-- `python -m shorts_maker` exits non-zero on validation/render failure.
-- Use `--verbose` to print exact FFmpeg/ffprobe commands for debugging.
+```bash
+ffmpeg -hide_banner -filters
+```
+
+### Windows 경로 이슈
+
+- 경로에 공백/특수문자가 많으면 FFmpeg 필터 인자에서 문제가 날 수 있습니다.
+- 가능하면 짧은 작업 경로(예: `C:\work\shorts-auto-builder`)를 사용하세요.
+
+### 폰트 이슈
+
+- 한글 글리프가 깨지면 한글 지원 폰트를 설치하고 `--font`로 직접 지정하세요.
+
+### TTS 이슈
+
+- `--voice edge` 사용 시 네트워크 상태에 따라 생성 속도가 느릴 수 있습니다.
+- 모듈 오류가 나면 의존성을 다시 설치하세요.

@@ -1,0 +1,19 @@
+﻿start: 0.0
+end: 6.0
+subtitle: 또 하루가 시작되고
+narration: 아침이 오면, 또 시작이죠.
+
+start: 6.0
+end: 15.0
+subtitle: 괜찮은 척,\n하고 있었죠
+narration: 웃으면서 일했지만, 사실은 조금 벅찼죠.
+
+start: 15.0
+end: 23.0
+subtitle: 그래도 오늘\n도망치지 않았잖아요
+narration: 그래도 오늘, 포기하지 않았잖아요.
+
+start: 23.0
+end: 30.0
+subtitle: 오늘도,\n정말 잘 버텼어요.\n당신은 충분히 잘하고 있어요.
+narration: 오늘도, 정말 잘 버텼어요.
