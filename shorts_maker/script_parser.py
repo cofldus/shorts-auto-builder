@@ -71,7 +71,8 @@ def _parse_block(block: str, block_index: int) -> Segment:
                 f"Segment {block_index + 1}: expected 'key: value' line, got: {line!r}"
             )
         key, value = line.split(":", 1)
-        key_norm = key.strip().lower()
+        # Accept UTF-8 BOM on the first key (common on Windows editors).
+        key_norm = key.strip().lower().lstrip("\ufeff")
         value_norm = value.strip()
         if key_norm not in {"start", "end", "subtitle", "narration"}:
             raise ValidationError(

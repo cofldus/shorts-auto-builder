@@ -39,3 +39,14 @@ def test_valid_script_ok(tmp_path: Path) -> None:
     assert len(segments) == 2
     assert segments[0].start == 0
     assert segments[1].end == 6
+
+
+def test_utf8_bom_key_is_accepted(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        "\ufeffstart: 00:00\nend: 00:03\nsubtitle: hello\n",
+    )
+    segments = parse_script(path)
+    assert len(segments) == 1
+    assert segments[0].start == 0
+    assert segments[0].end == 3
