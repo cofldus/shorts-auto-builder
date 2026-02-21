@@ -165,3 +165,11 @@ ffmpeg -hide_banner -filters
 - 저장소:
   - `STORAGE_BACKEND=local` 또는 `STORAGE_BACKEND=s3`
   - S3/R2 사용 시 `output_url` 반환 가능
+
+- 추가 모드:
+  - `replicate_video`: Replicate 전용 어댑터
+- S3 URL 모드:
+  - `S3_URL_MODE=public` 또는 `S3_URL_MODE=presigned`
+- 상태 조회:
+  - 워커 `GET /jobs/{job_id}`
+  - 웹 `GET /api/jobs/{jobId}`

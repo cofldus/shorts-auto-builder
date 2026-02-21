@@ -6,6 +6,7 @@ type JobResponse = {
   ok: boolean;
   jobId: string;
   workerUrl: string;
+  statusCheckUrl?: string;
   uploadCount: number;
   output_path?: string;
   output_url?: string;
@@ -16,6 +17,7 @@ type CreativeResponse = {
   ok: boolean;
   jobId: string;
   workerUrl: string;
+  statusCheckUrl?: string;
   output_path?: string;
   output_url?: string;
   mode?: string;
@@ -181,6 +183,7 @@ export default function HomePage() {
               작업 ID: {jobResult.jobId}
               <br />출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
               <br />출력 URL: {jobResult.output_url || "(미설정)"}
+              <br />상태 조회: {jobResult.statusCheckUrl || "(미설정)"}
               <br />메시지: {jobResult.message || "등록 완료"}
             </p>
           ) : null}
@@ -196,6 +199,7 @@ export default function HomePage() {
             <option value="mock">mock (로컬 생성, 비용 없음)</option>
             <option value="openai_image">openai_image (이미지 생성 API)</option>
             <option value="external_video">external_video (외부 영상 생성 API)</option>
+            <option value="replicate_video">replicate_video (Replicate 전용)</option>
           </select>
 
           <button type="button" disabled={loadingCreative} onClick={onCreateCreative}>
@@ -207,6 +211,7 @@ export default function HomePage() {
               작업 ID: {creativeResult.jobId}
               <br />출력 경로: {creativeResult.output_path || "(워커 응답 대기)"}
               <br />출력 URL: {creativeResult.output_url || "(미설정)"}
+              <br />상태 조회: {creativeResult.statusCheckUrl || "(미설정)"}
               <br />모드: {creativeResult.mode || "-"}
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
               <br />메시지: {creativeResult.message || "등록 완료"}

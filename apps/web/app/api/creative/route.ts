@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!["none", "slow"].includes(imageMotion)) {
     return NextResponse.json({ error: "imageMotion 값이 올바르지 않습니다." }, { status: 400 });
   }
-  if (!["mock", "openai_image", "external_video"].includes(generationMode)) {
+  if (!["mock", "openai_image", "external_video", "replicate_video"].includes(generationMode)) {
     return NextResponse.json({ error: "generationMode 값이 올바르지 않습니다." }, { status: 400 });
   }
 
@@ -54,7 +54,13 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json({ ok: true, jobId, workerUrl, ...data });
+    return NextResponse.json({
+      ok: true,
+      jobId,
+      workerUrl,
+      statusCheckUrl: `/api/jobs/${data.jobId || jobId}`,
+      ...data
+    });
   } catch (error) {
     return NextResponse.json(
       {

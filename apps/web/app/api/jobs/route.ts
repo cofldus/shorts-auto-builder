@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       jobId,
       workerUrl,
+      statusCheckUrl: `/api/jobs/${data.jobId || jobId}`,
       uploadCount: mediaFiles.length,
       ...data
     });
