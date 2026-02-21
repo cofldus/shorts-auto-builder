@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import subprocess
 
 from .script_parser import Segment
 from .utils import ValidationError, probe_media_duration, run_command
@@ -73,6 +74,47 @@ def _generate_tts_openai(segment_text: str, voice: str, lang: str, out_wav_path:
         raise ValidationError(f"OpenAI TTS 생성 실패: {exc}") from exc
 
 
+def _generate_tts_piper(segment_text: str, voice: str, out_wav_path: Path) -> None:
+    piper_bin = os.getenv("PIPER_BIN", "piper")
+    model_path = os.getenv("PIPER_MODEL")
+    config_path = os.getenv("PIPER_CONFIG")
+    speaker_id = os.getenv("PIPER_SPEAKER", "")
+
+    if not model_path:
+        raise ValidationError("PIPER_MODEL 환경 변수가 필요합니다.")
+
+    model_file = Path(model_path)
+    if not model_file.exists():
+        raise ValidationError(f"PIPER_MODEL 파일을 찾을 수 없습니다: {model_file}")
+
+    cmd = [
+        piper_bin,
+        "--model",
+        str(model_file),
+        "--output_file",
+        str(out_wav_path),
+    ]
+    if config_path:
+        config_file = Path(config_path)
+        if not config_file.exists():
+            raise ValidationError(f"PIPER_CONFIG 파일을 찾을 수 없습니다: {config_file}")
+        cmd.extend(["--config", str(config_file)])
+
+    selected_speaker = speaker_id
+    if voice.isdigit():
+        selected_speaker = voice
+    if selected_speaker:
+        cmd.extend(["--speaker", selected_speaker])
+
+    try:
+        subprocess.run(cmd, input=segment_text, text=True, capture_output=True, check=True)
+    except FileNotFoundError as exc:
+        raise ValidationError(f"Piper 실행 파일을 찾을 수 없습니다: {piper_bin}") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "")[-2000:]
+        raise ValidationError(f"Piper TTS 생성 실패: {stderr}") from exc
+
+
 def generate_tts(
     segment_text: str,
     mode: str,
@@ -95,6 +137,9 @@ def generate_tts(
             lang=lang,
             out_wav_path=out_wav_path,
         )
+        return
+    if mode == "piper":
+        _generate_tts_piper(segment_text=segment_text, voice=voice, out_wav_path=out_wav_path)
         return
 
     raise ValidationError(f"Unsupported voice mode for TTS generation: {mode}")
@@ -276,7 +321,7 @@ def build_final_audio_track(
     narration = _build_narration_track(
         ffmpeg_bin=ffmpeg_bin,
         ffprobe_bin=ffprobe_bin,
-        segments=segments if voice_mode in {"edge", "openai"} else [],
+        segments=segments if voice_mode in {"edge", "openai", "piper"} else [],
         duration=duration,
         voice_mode=voice_mode,
         voice=voice_voice,

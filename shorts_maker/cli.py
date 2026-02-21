@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import os
 from pathlib import Path
+import shutil
 
 from .render import render_video
 from .script_parser import parse_script, validate_segments
@@ -32,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--size", type=parse_size, default=(1080, 1920))
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--bgm", default=None, help="Optional BGM path")
-    parser.add_argument("--voice", choices=["none", "edge", "openai"], default="none")
+    parser.add_argument("--voice", choices=["none", "edge", "openai", "piper"], default="none")
     parser.add_argument("--voice-lang", default="ko-KR")
     parser.add_argument("--voice-voice", default="ko-KR-SunHiNeural")
     parser.add_argument("--font", default=None, help="Optional subtitle font path (reserved)")
@@ -67,6 +68,15 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValidationError(f"Font file not found: {args.font}")
     if args.voice == "openai" and not os.getenv("OPENAI_API_KEY"):
         raise ValidationError("--voice openai 사용 시 OPENAI_API_KEY 환경 변수가 필요합니다.")
+    if args.voice == "piper":
+        piper_bin = os.getenv("PIPER_BIN", "piper")
+        piper_model = os.getenv("PIPER_MODEL")
+        if not shutil.which(piper_bin):
+            raise ValidationError(f"Piper 실행 파일을 찾을 수 없습니다: {piper_bin}")
+        if not piper_model:
+            raise ValidationError("--voice piper 사용 시 PIPER_MODEL 환경 변수가 필요합니다.")
+        if not Path(piper_model).exists():
+            raise ValidationError(f"PIPER_MODEL 파일을 찾을 수 없습니다: {piper_model}")
 
 
 def main(argv: list[str] | None = None) -> int:

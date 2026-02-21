@@ -7,7 +7,7 @@
 - 스크립트 기반 쇼츠 생성 (`start/end/subtitle/narration`)
 - 자막(ASS) 생성 및 번인 렌더링
 - 배경음악(BGM) 루프, 트림, 내레이션 구간 덕킹
-- TTS 내레이션 생성 (`--voice edge`, `--voice openai`)
+- TTS 내레이션 생성 (`--voice edge`, `--voice piper`, `--voice openai`)
 - 이미지 모션 제어 (`--image-motion none|slow`)
 
 ## 설치
@@ -70,6 +70,13 @@ set OPENAI_API_KEY=your_api_key
 python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice openai --voice-lang ko-KR --voice-voice alloy --image-motion none
 ```
 
+### 최소 실행 예시 4: Piper 로컬 TTS 사용
+
+```bash
+set PIPER_MODEL=C:\models\ko_KR-voice.onnx
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice piper --voice-voice 0 --image-motion none
+```
+
 ## 데모 에셋 실행
 
 ```bash
@@ -86,7 +93,7 @@ python -m shorts_maker --script demo_assets\script.txt --assets demo_assets --ou
 - `--size` (기본 1080x1920): 출력 해상도
 - `--fps` (기본 30): 프레임레이트
 - `--bgm`: 배경음악 파일 경로
-- `--voice`: `none`, `edge`, `openai`
+- `--voice`: `none`, `edge`, `piper`, `openai`
 - `--voice-lang`: TTS 언어 코드
 - `--voice-voice`: TTS 화자 이름
 - `--font`: 자막 폰트 파일 경로
@@ -106,6 +113,7 @@ Vercel 기반 서비스로 확장하려면 `apps/web` 폴더를 사용하세요.
 - 작업 큐 등록: 업로드 파일 메타데이터와 스크립트를 작업 워커로 전달
 - 렌더링 워커: Python 엔진(`shorts_maker`)으로 최종 MP4 생성
 - 결과 전달: 저장소 URL을 프론트에 반환
+- 현재 `apps/web/app/api/jobs`는 워커의 `/render-upload`를 직접 호출합니다.
 
 주의:
 
@@ -135,6 +143,8 @@ ffmpeg -hide_banner -filters
 ### TTS 이슈
 
 - `--voice edge` 사용 시 네트워크 상태에 따라 생성 속도가 느릴 수 있습니다.
+- `--voice piper` 사용 시 `PIPER_MODEL` 환경 변수(onnx 모델 파일 경로)가 필요합니다.
+- `--voice piper`에서 `--voice-voice`는 숫자 화자 ID(예: `0`)로 넣을 수 있습니다.
 - `--voice openai` 사용 시 `OPENAI_API_KEY` 환경 변수가 필요합니다.
 - 모듈 오류가 나면 의존성을 다시 설치하세요.
 - 이미지가 흔들려 보이면 `--image-motion none`으로 실행하세요.

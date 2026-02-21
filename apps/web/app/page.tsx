@@ -7,7 +7,8 @@ type JobResponse = {
   jobId: string;
   workerUrl: string;
   uploadCount: number;
-  message: string;
+  output_path?: string;
+  message?: string;
 };
 
 export default function HomePage() {
@@ -15,6 +16,9 @@ export default function HomePage() {
   const [tone, setTone] = useState("담백하고 따뜻한 톤");
   const [durationSec, setDurationSec] = useState(30);
   const [voice, setVoice] = useState("edge");
+  const [voiceLang, setVoiceLang] = useState("ko-KR");
+  const [voiceVoice, setVoiceVoice] = useState("ko-KR-SunHiNeural");
+  const [imageMotion, setImageMotion] = useState("none");
   const [script, setScript] = useState("");
   const [loadingScript, setLoadingScript] = useState(false);
   const [loadingJob, setLoadingJob] = useState(false);
@@ -53,6 +57,9 @@ export default function HomePage() {
     const form = new FormData(e.currentTarget);
     form.set("script", script);
     form.set("voice", voice);
+    form.set("voiceLang", voiceLang);
+    form.set("voiceVoice", voiceVoice);
+    form.set("imageMotion", imageMotion);
     form.set("durationSec", String(durationSec));
 
     try {
@@ -111,7 +118,35 @@ export default function HomePage() {
             <select id="voice" name="voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
               <option value="none">none (무음/배경음만)</option>
               <option value="edge">edge (무료)</option>
+              <option value="piper">piper (로컬 무료)</option>
               <option value="openai">openai (유료)</option>
+            </select>
+
+            <label htmlFor="voiceLang">음성 언어</label>
+            <input
+              id="voiceLang"
+              name="voiceLang"
+              value={voiceLang}
+              onChange={(e) => setVoiceLang(e.target.value)}
+            />
+
+            <label htmlFor="voiceVoice">음성 화자</label>
+            <input
+              id="voiceVoice"
+              name="voiceVoice"
+              value={voiceVoice}
+              onChange={(e) => setVoiceVoice(e.target.value)}
+            />
+
+            <label htmlFor="imageMotion">이미지 모션</label>
+            <select
+              id="imageMotion"
+              name="imageMotion"
+              value={imageMotion}
+              onChange={(e) => setImageMotion(e.target.value)}
+            >
+              <option value="none">none (정지)</option>
+              <option value="slow">slow (완만한 줌)</option>
             </select>
 
             <label htmlFor="media">첨부 이미지/영상</label>
@@ -128,7 +163,9 @@ export default function HomePage() {
               <br />
               워커 URL: {jobResult.workerUrl}
               <br />
-              메시지: {jobResult.message}
+              출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
+              <br />
+              메시지: {jobResult.message || "등록 완료"}
             </p>
           ) : null}
 
