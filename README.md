@@ -15,6 +15,7 @@
 - Python 3.10+ 권장
 - FFmpeg, FFprobe 설치 및 PATH 등록 필요
 - `ffmpeg -version`, `ffprobe -version` 명령이 터미널에서 동작해야 함
+- PATH 인식이 안 될 경우 WinGet 설치 경로를 자동 탐색하며, 필요 시 `FFMPEG_BIN`, `FFPROBE_BIN` 환경 변수로 직접 지정 가능
 
 ```bash
 pip install -r requirements.txt

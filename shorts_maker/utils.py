@@ -4,6 +4,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import os
 
 
 class ShortsMakerError(Exception):
@@ -31,10 +32,37 @@ def _format_command(args: list[str]) -> str:
 
 
 def ensure_executable(name: str) -> str:
+    env_key = f"{name.upper()}_BIN"
+    env_bin = os.getenv(env_key)
+    if env_bin:
+        resolved_env = shutil.which(env_bin) or (env_bin if Path(env_bin).exists() else None)
+        if resolved_env:
+            return resolved_env
     resolved = shutil.which(name)
     if not resolved:
-        raise ValidationError(f"Required executable not found in PATH: {name}")
+        fallback = _find_winget_ffmpeg_binary(name)
+        if fallback:
+            return fallback
+        raise ValidationError(
+            f"Required executable not found in PATH: {name} "
+            f"(or set {env_key} to an explicit executable path)"
+        )
     return resolved
+
+
+def _find_winget_ffmpeg_binary(name: str) -> str | None:
+    local_app_data = os.getenv("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+    root = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+    if not root.exists():
+        return None
+    pattern = f"Gyan.FFmpeg_*/*/bin/{name}.exe"
+    matches = sorted(root.glob(pattern), reverse=True)
+    for match in matches:
+        if match.exists():
+            return str(match)
+    return None
 
 
 def run_command(args: list[str], capture_output: bool = False) -> subprocess.CompletedProcess[str] | None:
