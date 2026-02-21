@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+.env
+apps/web/node_modules/
+apps/web/.next/
