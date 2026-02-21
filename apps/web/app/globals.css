@@ -1,0 +1,95 @@
+﻿:root {
+  --bg: #f2f4f6;
+  --card: #ffffff;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --line: #d1d5db;
+  --accent: #0f766e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top right, #d1fae5 0, transparent 45%),
+    radial-gradient(circle at bottom left, #dbeafe 0, transparent 40%),
+    var(--bg);
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
+}
+
+main {
+  max-width: 980px;
+  margin: 40px auto;
+  padding: 0 16px 40px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+}
+
+p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.grid {
+  margin-top: 20px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+}
+
+label {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin: 10px 0 6px;
+}
+
+input,
+select,
+textarea,
+button {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  padding: 10px 12px;
+}
+
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+button {
+  margin-top: 12px;
+  border: 0;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.result {
+  margin-top: 10px;
+  font-size: 0.9rem;
+}

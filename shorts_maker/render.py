@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 import tempfile
@@ -135,16 +135,23 @@ def _render_image_segment(
     duration: float,
     size: tuple[int, int],
     fps: int,
+    image_motion: str,
 ) -> None:
     width, height = size
-    frames = max(1, int(duration * fps))
-    vf = (
-        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{height},"
-        f"zoompan=z='min(zoom+0.0008,1.1)':"
-        f"d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"s={width}x{height}:fps={fps}"
-    )
+    if image_motion == "slow":
+        frames = max(1, int(duration * fps))
+        vf = (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},"
+            f"zoompan=z='min(zoom+0.0004,1.05)':"
+            f"d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"s={width}x{height}:fps={fps}"
+        )
+    else:
+        vf = (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height}"
+        )
     cmd = [
         ffmpeg_bin,
         "-y",
@@ -186,11 +193,12 @@ def _render_segment_clip(
     duration: float,
     size: tuple[int, int],
     fps: int,
+    image_motion: str,
 ) -> None:
     if is_video(asset):
         _render_video_segment(ffmpeg_bin, ffprobe_bin, asset, out_path, duration, size, fps)
     else:
-        _render_image_segment(ffmpeg_bin, asset, out_path, duration, size, fps)
+        _render_image_segment(ffmpeg_bin, asset, out_path, duration, size, fps, image_motion)
 
 
 def _concat_clips(ffmpeg_bin: str, clip_paths: list[Path], output_path: Path) -> None:
@@ -238,6 +246,7 @@ def render_video(
     voice_voice: str,
     font: str | None = None,
     fade: float = 0.15,
+    image_motion: str = "none",
 ) -> None:
     del font  # reserved for future ass style customization
     if duration <= 0:
@@ -270,7 +279,16 @@ def render_video(
 
             asset = chosen_assets[i]
             seg_clip = tmp / f"clip_seg_{i:04d}.mp4"
-            _render_segment_clip(ffmpeg_bin, ffprobe_bin, asset, seg_clip, seg_dur, size, fps)
+            _render_segment_clip(
+                ffmpeg_bin,
+                ffprobe_bin,
+                asset,
+                seg_clip,
+                seg_dur,
+                size,
+                fps,
+                image_motion,
+            )
             clips.append(seg_clip)
             timeline_pos += seg_dur
 
@@ -302,8 +320,7 @@ def render_video(
 
         if voice == "none" and not bgm:
             print(
-                "[warning] --voice none 과 --bgm 미지정 상태입니다. "
-                "원본/에셋 오디오가 없으면 결과가 무음일 수 있습니다."
+                "[warning] --voice none 이고 --bgm이 없으면 내레이션/배경음이 없어 결과가 무음일 수 있습니다."
             )
             run_command(
                 [

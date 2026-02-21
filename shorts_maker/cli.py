@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--subtitle-pos", choices=["bottom", "center"], default="bottom")
     parser.add_argument("--safe-margin", type=float, default=0.08)
     parser.add_argument("--fade", type=float, default=0.25)
+    parser.add_argument("--image-motion", choices=["none", "slow"], default="none")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--verbose", action="store_true", help="Print FFmpeg/ffprobe commands")
     return parser
@@ -93,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             voice_voice=args.voice_voice,
             font=args.font,
             fade=args.fade,
+            image_motion=args.image_motion,
         )
     except ShortsMakerError as exc:
         parser.error(str(exc))

@@ -8,6 +8,7 @@
 - 자막(ASS) 생성 및 번인 렌더링
 - 배경음악(BGM) 루프, 트림, 내레이션 구간 덕킹
 - TTS 내레이션 생성 (`--voice edge`, `--voice openai`)
+- 이미지 모션 제어 (`--image-motion none|slow`)
 
 ## 설치
 
@@ -53,20 +54,30 @@ narration: 웃으면서 일했지만, 사실은 조금 벅찼죠.
 ### 최소 실행 예시 1: TTS 없이
 
 ```bash
-python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice none
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice none --image-motion none
 ```
 
 ### 최소 실행 예시 2: Edge TTS 사용
 
 ```bash
-python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice edge --voice-lang ko-KR --voice-voice ko-KR-SunHiNeural
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice edge --voice-lang ko-KR --voice-voice ko-KR-SunHiNeural --image-motion none
 ```
 
 ### 최소 실행 예시 3: OpenAI TTS 사용
 
 ```bash
 set OPENAI_API_KEY=your_api_key
-python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice openai --voice-lang ko-KR --voice-voice alloy
+python -m shorts_maker --script script.txt --assets assets --out output.mp4 --voice openai --voice-lang ko-KR --voice-voice alloy --image-motion none
+```
+
+## 데모 에셋 실행
+
+```bash
+python -m shorts_maker --script demo_assets\script.txt --assets demo_assets --out output_demo_none.mp4 --voice none --duration 35 --image-motion none
+```
+
+```bash
+python -m shorts_maker --script demo_assets\script.txt --assets demo_assets --out output_demo_edge.mp4 --voice edge --voice-lang ko-KR --voice-voice ko-KR-SunHiNeural --duration 35 --image-motion none
 ```
 
 ## 옵션 설명
@@ -82,8 +93,24 @@ python -m shorts_maker --script script.txt --assets assets --out output.mp4 --vo
 - `--subtitle-pos`: `bottom` 또는 `center`
 - `--safe-margin`: 자막 안전 여백 비율 (`0 <= x < 0.5`)
 - `--fade`: 장면 전환 페이드 시간(초)
+- `--image-motion`: 이미지 모션 (`none`, `slow`)
 - `--seed`: 에셋 선택 재현용 시드
 - `--verbose`: FFmpeg/FFprobe 실행 로그 출력
+
+## 서비스형 자동화 확장
+
+Vercel 기반 서비스로 확장하려면 `apps/web` 폴더를 사용하세요.
+
+- 사용자 입력: 주제 키워드, 톤, 길이, 첨부 이미지/영상
+- 자동 스크립트 생성: 서버 API에서 키워드로 `script.txt` 형식 생성
+- 작업 큐 등록: 업로드 파일 메타데이터와 스크립트를 작업 워커로 전달
+- 렌더링 워커: Python 엔진(`shorts_maker`)으로 최종 MP4 생성
+- 결과 전달: 저장소 URL을 프론트에 반환
+
+주의:
+
+- Vercel 서버리스 함수에서 FFmpeg 대용량 렌더링을 직접 돌리는 것은 권장하지 않습니다.
+- 렌더링은 별도 워커(Cloud Run/Render/Railway 등)로 분리하세요.
 
 ## 트러블슈팅
 
@@ -110,3 +137,4 @@ ffmpeg -hide_banner -filters
 - `--voice edge` 사용 시 네트워크 상태에 따라 생성 속도가 느릴 수 있습니다.
 - `--voice openai` 사용 시 `OPENAI_API_KEY` 환경 변수가 필요합니다.
 - 모듈 오류가 나면 의존성을 다시 설치하세요.
+- 이미지가 흔들려 보이면 `--image-motion none`으로 실행하세요.
