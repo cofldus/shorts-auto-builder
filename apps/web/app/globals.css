@@ -75,6 +75,10 @@ textarea {
   resize: vertical;
 }
 
+.card-wide textarea {
+  min-height: 120px;
+}
+
 button {
   margin-top: 12px;
   border: 0;

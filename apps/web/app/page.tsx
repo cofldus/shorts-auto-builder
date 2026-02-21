@@ -11,18 +11,35 @@ type JobResponse = {
   message?: string;
 };
 
+type CreativeResponse = {
+  ok: boolean;
+  jobId: string;
+  workerUrl: string;
+  output_path?: string;
+  mode?: string;
+  asset_count?: number;
+  message?: string;
+};
+
 export default function HomePage() {
   const [topic, setTopic] = useState("직장인 위로 30초");
   const [tone, setTone] = useState("담백하고 따뜻한 톤");
   const [durationSec, setDurationSec] = useState(30);
+  const [style, setStyle] = useState("cinematic vertical short, natural light, realistic texture");
+  const [generationMode, setGenerationMode] = useState("mock");
+
   const [voice, setVoice] = useState("edge");
   const [voiceLang, setVoiceLang] = useState("ko-KR");
   const [voiceVoice, setVoiceVoice] = useState("ko-KR-SunHiNeural");
   const [imageMotion, setImageMotion] = useState("none");
   const [script, setScript] = useState("");
+
   const [loadingScript, setLoadingScript] = useState(false);
   const [loadingJob, setLoadingJob] = useState(false);
+  const [loadingCreative, setLoadingCreative] = useState(false);
+
   const [jobResult, setJobResult] = useState<JobResponse | null>(null);
+  const [creativeResult, setCreativeResult] = useState<CreativeResponse | null>(null);
   const [error, setError] = useState("");
 
   const canCreateJob = useMemo(() => script.trim().length > 0, [script]);
@@ -79,10 +96,43 @@ export default function HomePage() {
     }
   }
 
+  async function onCreateCreative() {
+    setError("");
+    setLoadingCreative(true);
+    setCreativeResult(null);
+    try {
+      const res = await fetch("/api/creative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          tone,
+          duration: durationSec,
+          style,
+          voice,
+          imageMotion,
+          generationMode
+        })
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const data = (await res.json()) as CreativeResponse;
+      setCreativeResult(data);
+      if (!script.trim()) {
+        await onGenerateScript();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "생성형 작업 등록 실패");
+    } finally {
+      setLoadingCreative(false);
+    }
+  }
+
   return (
     <main>
       <h1>쇼츠 자동화 스튜디오</h1>
-      <p>주제 키워드로 스크립트를 만들고, 첨부 미디어 기반 편집 작업을 등록합니다.</p>
+      <p>첨부 편집과 생성형 영상을 한 화면에서 처리합니다.</p>
 
       <div className="grid">
         <section className="card">
@@ -98,7 +148,7 @@ export default function HomePage() {
             id="duration"
             type="number"
             min={10}
-            max={90}
+            max={120}
             value={durationSec}
             onChange={(e) => setDurationSec(Number(e.target.value) || 30)}
           />
@@ -112,7 +162,7 @@ export default function HomePage() {
         </section>
 
         <section className="card">
-          <h2>미디어 편집 작업 등록</h2>
+          <h2>첨부 편집 모드</h2>
           <form onSubmit={onCreateJob}>
             <label htmlFor="voice">음성 모드</label>
             <select id="voice" name="voice" value={voice} onChange={(e) => setVoice(e.target.value)}>
@@ -123,28 +173,13 @@ export default function HomePage() {
             </select>
 
             <label htmlFor="voiceLang">음성 언어</label>
-            <input
-              id="voiceLang"
-              name="voiceLang"
-              value={voiceLang}
-              onChange={(e) => setVoiceLang(e.target.value)}
-            />
+            <input id="voiceLang" name="voiceLang" value={voiceLang} onChange={(e) => setVoiceLang(e.target.value)} />
 
             <label htmlFor="voiceVoice">음성 화자</label>
-            <input
-              id="voiceVoice"
-              name="voiceVoice"
-              value={voiceVoice}
-              onChange={(e) => setVoiceVoice(e.target.value)}
-            />
+            <input id="voiceVoice" name="voiceVoice" value={voiceVoice} onChange={(e) => setVoiceVoice(e.target.value)} />
 
             <label htmlFor="imageMotion">이미지 모션</label>
-            <select
-              id="imageMotion"
-              name="imageMotion"
-              value={imageMotion}
-              onChange={(e) => setImageMotion(e.target.value)}
-            >
+            <select id="imageMotion" name="imageMotion" value={imageMotion} onChange={(e) => setImageMotion(e.target.value)}>
               <option value="none">none (정지)</option>
               <option value="slow">slow (완만한 줌)</option>
             </select>
@@ -153,25 +188,47 @@ export default function HomePage() {
             <input id="media" name="media" type="file" multiple accept="image/*,video/*" />
 
             <button type="submit" disabled={!canCreateJob || loadingJob}>
-              {loadingJob ? "등록 중..." : "작업 등록"}
+              {loadingJob ? "등록 중..." : "첨부 편집 실행"}
             </button>
           </form>
 
           {jobResult ? (
             <p className="result">
               작업 ID: {jobResult.jobId}
-              <br />
-              워커 URL: {jobResult.workerUrl}
-              <br />
-              출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
-              <br />
-              메시지: {jobResult.message || "등록 완료"}
+              <br />출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
+              <br />메시지: {jobResult.message || "등록 완료"}
             </p>
           ) : null}
+        </section>
 
-          {error ? <p className="result">오류: {error}</p> : null}
+        <section className="card card-wide">
+          <h2>생성형 영상 모드</h2>
+          <label htmlFor="style">비주얼 스타일 프롬프트</label>
+          <textarea id="style" value={style} onChange={(e) => setStyle(e.target.value)} />
+
+          <label htmlFor="generationMode">생성 방식</label>
+          <select id="generationMode" value={generationMode} onChange={(e) => setGenerationMode(e.target.value)}>
+            <option value="mock">mock (로컬 생성, 비용 없음)</option>
+            <option value="openai_image">openai_image (이미지 생성 API 사용)</option>
+          </select>
+
+          <button type="button" disabled={loadingCreative} onClick={onCreateCreative}>
+            {loadingCreative ? "생성 중..." : "무에서 유 생성 실행"}
+          </button>
+
+          {creativeResult ? (
+            <p className="result">
+              작업 ID: {creativeResult.jobId}
+              <br />출력 경로: {creativeResult.output_path || "(워커 응답 대기)"}
+              <br />모드: {creativeResult.mode || "-"}
+              <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
+              <br />메시지: {creativeResult.message || "등록 완료"}
+            </p>
+          ) : null}
         </section>
       </div>
+
+      {error ? <p className="result">오류: {error}</p> : null}
     </main>
   );
 }

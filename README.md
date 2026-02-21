@@ -115,6 +115,10 @@ Vercel 기반 서비스로 확장하려면 `apps/web` 폴더를 사용하세요.
 - 렌더링 워커: Python 엔진(`shorts_maker`)으로 최종 MP4 생성
 - 결과 전달: 저장소 URL을 프론트에 반환
 - 현재 `apps/web/app/api/jobs`는 워커의 `/render-upload`를 직접 호출합니다.
+- 생성형 모드: `apps/web/app/api/creative` -> 워커 `/generate-creative` 호출
+- 생성 방식:
+  - `mock`: 비용 없이 로컬 생성 자산으로 테스트
+  - `openai_image`: 이미지 생성 API 기반 장면 생성
 
 주의:
 
