@@ -112,10 +112,6 @@ python -m shorts_maker --script script.txt --assets assets --out output.mp4 --vo
 - `python -m shorts_maker` exits non-zero on validation/render failure.
 - Use `--verbose` to print exact FFmpeg/ffprobe commands for debugging.
 
-## 브랜치별 PR 재작성 가이드
-- 모든 브랜치의 PR을 다시 올려야 할 때는 아래 보조 스크립트로 브랜치별 한글 템플릿을 출력할 수 있습니다.
-- 실제 PR 생성/회수는 GitHub UI 또는 사내 표준 도구로 진행하세요.
-
-```bash
-bash scripts/recreate_pr_per_branch.sh
-```
+## 브랜치 운영
+- 이 저장소는 단일 작업 브랜치 기준으로 운영합니다.
+- PR은 현재 작업 브랜치의 최신 커밋을 기준으로 갱신하세요.
