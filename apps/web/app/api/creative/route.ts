@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const topic = String(body.topic || "").trim();
-  const tone = String(body.tone || "담백하고 몰입감 있는 톤").trim();
+  const tone = String(body.tone || "Calm and immersive").trim();
   const style = String(body.style || "cinematic vertical short").trim();
   const duration = Number(body.duration || 30);
   const voice = String(body.voice || "edge").trim();
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!["none", "slow"].includes(imageMotion)) {
     return NextResponse.json({ error: "imageMotion 값이 올바르지 않습니다." }, { status: 400 });
   }
-  if (!["mock", "openai_image"].includes(generationMode)) {
+  if (!["mock", "openai_image", "external_video"].includes(generationMode)) {
     return NextResponse.json({ error: "generationMode 값이 올바르지 않습니다." }, { status: 400 });
   }
 
@@ -54,12 +54,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json({
-      ok: true,
-      jobId,
-      workerUrl,
-      ...data
-    });
+    return NextResponse.json({ ok: true, jobId, workerUrl, ...data });
   } catch (error) {
     return NextResponse.json(
       {

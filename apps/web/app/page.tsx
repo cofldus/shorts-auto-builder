@@ -8,6 +8,7 @@ type JobResponse = {
   workerUrl: string;
   uploadCount: number;
   output_path?: string;
+  output_url?: string;
   message?: string;
 };
 
@@ -16,6 +17,7 @@ type CreativeResponse = {
   jobId: string;
   workerUrl: string;
   output_path?: string;
+  output_url?: string;
   mode?: string;
   asset_count?: number;
   message?: string;
@@ -54,9 +56,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic, tone, durationSec })
       });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
+      if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setScript(data.script);
     } catch (e) {
@@ -80,13 +80,8 @@ export default function HomePage() {
     form.set("durationSec", String(durationSec));
 
     try {
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        body: form
-      });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
+      const res = await fetch("/api/jobs", { method: "POST", body: form });
+      if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as JobResponse;
       setJobResult(data);
     } catch (e) {
@@ -114,14 +109,10 @@ export default function HomePage() {
           generationMode
         })
       });
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
+      if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as CreativeResponse;
       setCreativeResult(data);
-      if (!script.trim()) {
-        await onGenerateScript();
-      }
+      if (!script.trim()) await onGenerateScript();
     } catch (e) {
       setError(e instanceof Error ? e.message : "생성형 작업 등록 실패");
     } finally {
@@ -144,14 +135,7 @@ export default function HomePage() {
           <input id="tone" value={tone} onChange={(e) => setTone(e.target.value)} />
 
           <label htmlFor="duration">길이(초)</label>
-          <input
-            id="duration"
-            type="number"
-            min={10}
-            max={120}
-            value={durationSec}
-            onChange={(e) => setDurationSec(Number(e.target.value) || 30)}
-          />
+          <input id="duration" type="number" min={10} max={120} value={durationSec} onChange={(e) => setDurationSec(Number(e.target.value) || 30)} />
 
           <button type="button" disabled={loadingScript} onClick={onGenerateScript}>
             {loadingScript ? "생성 중..." : "스크립트 생성"}
@@ -196,6 +180,7 @@ export default function HomePage() {
             <p className="result">
               작업 ID: {jobResult.jobId}
               <br />출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
+              <br />출력 URL: {jobResult.output_url || "(미설정)"}
               <br />메시지: {jobResult.message || "등록 완료"}
             </p>
           ) : null}
@@ -209,7 +194,8 @@ export default function HomePage() {
           <label htmlFor="generationMode">생성 방식</label>
           <select id="generationMode" value={generationMode} onChange={(e) => setGenerationMode(e.target.value)}>
             <option value="mock">mock (로컬 생성, 비용 없음)</option>
-            <option value="openai_image">openai_image (이미지 생성 API 사용)</option>
+            <option value="openai_image">openai_image (이미지 생성 API)</option>
+            <option value="external_video">external_video (외부 영상 생성 API)</option>
           </select>
 
           <button type="button" disabled={loadingCreative} onClick={onCreateCreative}>
@@ -220,6 +206,7 @@ export default function HomePage() {
             <p className="result">
               작업 ID: {creativeResult.jobId}
               <br />출력 경로: {creativeResult.output_path || "(워커 응답 대기)"}
+              <br />출력 URL: {creativeResult.output_url || "(미설정)"}
               <br />모드: {creativeResult.mode || "-"}
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
               <br />메시지: {creativeResult.message || "등록 완료"}

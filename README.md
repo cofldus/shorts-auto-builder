@@ -153,3 +153,15 @@ ffmpeg -hide_banner -filters
 - `--voice openai` 사용 시 `OPENAI_API_KEY` 환경 변수가 필요합니다.
 - 모듈 오류가 나면 의존성을 다시 설치하세요.
 - 이미지가 흔들려 보이면 `--image-motion none`으로 실행하세요.
+
+## 생성형 영상 고도화
+
+- 생성형 모드 API: `apps/web/app/api/creative`
+- 워커 엔드포인트: `/generate-creative`
+- 모드:
+  - `mock`: 비용 없는 로컬 테스트
+  - `openai_image`: 이미지 생성 기반
+  - `external_video`: 외부 영상 생성 provider 연동
+- 저장소:
+  - `STORAGE_BACKEND=local` 또는 `STORAGE_BACKEND=s3`
+  - S3/R2 사용 시 `output_url` 반환 가능

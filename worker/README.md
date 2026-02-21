@@ -23,9 +23,7 @@ curl -X POST http://localhost:8000/render-upload \
   -F "media=@demo_assets/sample2.jpg"
 ```
 
-## 생성형 렌더(무에서 유)
-
-`generation_mode=mock`은 비용 없이 로컬 추상 장면으로 생성합니다.
+## 생성형 렌더
 
 ```bash
 curl -X POST http://localhost:8000/generate-creative \
@@ -33,16 +31,29 @@ curl -X POST http://localhost:8000/generate-creative \
   -d "{\"topic\":\"직장인 위로\",\"tone\":\"따뜻하고 진정성 있게\",\"duration\":30,\"style\":\"cinematic vertical short\",\"voice\":\"edge\",\"image_motion\":\"slow\",\"generation_mode\":\"mock\"}"
 ```
 
-`generation_mode=openai_image`은 이미지 생성 API를 사용합니다.
-
-## 환경 변수
+## external_video provider 환경 변수
 
 ```bash
-set WORKER_OUTPUT_DIR=worker_outputs
-set FFMPEG_BIN=C:\path\to\ffmpeg.exe
-set OPENAI_API_KEY=
-set OPENAI_IMAGE_MODEL=gpt-image-1
+set VIDEO_PROVIDER_API_BASE=https://provider.example.com
+set VIDEO_PROVIDER_API_KEY=your_key
+set VIDEO_PROVIDER_CREATE_PATH=/v1/video/jobs
+set VIDEO_PROVIDER_STATUS_PATH=/v1/video/jobs/{job_id}
+set VIDEO_PROVIDER_POLL_SEC=2
+set VIDEO_PROVIDER_POLL_MAX=45
 ```
+
+## 저장소 업로드(S3/R2)
+
+```bash
+set STORAGE_BACKEND=s3
+set S3_BUCKET=your-bucket
+set S3_REGION=ap-northeast-2
+set S3_ENDPOINT_URL=
+set S3_PREFIX=shorts
+set S3_PUBLIC_BASE_URL=https://cdn.example.com
+```
+
+`STORAGE_BACKEND=local`이면 로컬 경로를 반환하고, `WORKER_PUBLIC_BASE_URL`이 있으면 공개 URL도 함께 반환합니다.
 
 ## Piper 사용 시 환경 변수
 
