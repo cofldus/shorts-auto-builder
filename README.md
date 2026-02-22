@@ -162,12 +162,22 @@ ffmpeg -hide_banner -filters
   - `mock`: 비용 없는 로컬 테스트
   - `openai_image`: 이미지 생성 기반
   - `external_video`: 외부 영상 생성 provider 연동
+  - `runway`: Runway API 기반 생성
 - 저장소:
   - `STORAGE_BACKEND=local` 또는 `STORAGE_BACKEND=s3`
   - S3/R2 사용 시 `output_url` 반환 가능
 
 - 추가 모드:
   - `replicate_video`: Replicate 전용 어댑터
+- Runway 세부 모드:
+  - `text_to_video`
+  - `image_to_video` (소스 이미지 필요)
+  - `video_to_video` (소스 비디오 필요)
+- Runway 환경 변수:
+  - `RUNWAY_API_KEY`
+  - `RUNWAY_API_BASE` (기본: `https://api.dev.runwayml.com`)
+  - `RUNWAY_API_VERSION` (기본: `2024-11-06`)
+  - `RUNWAY_TEXT_MODEL`, `RUNWAY_IMAGE_MODEL`, `RUNWAY_VIDEO_MODEL`
 - S3 URL 모드:
   - `S3_URL_MODE=public` 또는 `S3_URL_MODE=presigned`
 - 상태 조회:

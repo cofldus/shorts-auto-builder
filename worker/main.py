@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 import os
 from pathlib import Path
 import shutil
@@ -62,8 +63,15 @@ class CreativeRequest(BaseModel):
     image_motion: str = Field(default="slow", pattern="^(none|slow)$")
     generation_mode: str = Field(
         default="mock",
-        pattern="^(mock|openai_image|external_video|replicate_video)$",
+        pattern="^(mock|openai_image|external_video|replicate_video|runway)$",
     )
+    runway_mode: str = Field(
+        default="text_to_video",
+        pattern="^(text_to_video|image_to_video|video_to_video)$",
+    )
+    runway_ratio: str = "720:1280"
+    runway_duration: int = Field(default=10, ge=2, le=10)
+    runway_seed: int | None = Field(default=None, ge=0, le=2147483647)
 
 
 def _resolve_output_dir() -> Path:
@@ -554,6 +562,240 @@ def _generate_replicate_video_assets(
     return generated
 
 
+def _has_runway_env() -> bool:
+    return bool(os.getenv("RUNWAY_API_KEY"))
+
+
+def _runway_session():
+    import requests
+
+    session = requests.Session()
+    session.trust_env = _use_env_proxy()
+    return session
+
+
+def _runway_headers() -> dict[str, str]:
+    api_key = os.getenv("RUNWAY_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNWAY_API_KEY is required")
+    version = os.getenv("RUNWAY_API_VERSION", "2024-11-06")
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "X-Runway-Version": version,
+        "Content-Type": "application/json",
+    }
+
+
+def _runway_base_url() -> str:
+    return os.getenv("RUNWAY_API_BASE", "https://api.dev.runwayml.com").rstrip("/")
+
+
+def _runway_text_prompt(topic: str, tone: str, style: str) -> str:
+    return f"{topic}. Tone: {tone}. Style: {style}"
+
+
+def _is_image_file(filename: str) -> bool:
+    suffix = Path(filename).suffix.lower()
+    return suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+
+
+def _is_video_file(filename: str) -> bool:
+    suffix = Path(filename).suffix.lower()
+    return suffix in {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
+
+
+def _pick_first_http_url(value) -> str | None:
+    if isinstance(value, str):
+        if value.startswith("http://") or value.startswith("https://"):
+            return value
+        return None
+    if isinstance(value, list):
+        for item in value:
+            found = _pick_first_http_url(item)
+            if found:
+                return found
+        return None
+    if isinstance(value, dict):
+        for key in ("url", "video_url", "videoUrl", "downloadUrl", "outputUrl"):
+            found = _pick_first_http_url(value.get(key))
+            if found:
+                return found
+        for item in value.values():
+            found = _pick_first_http_url(item)
+            if found:
+                return found
+    return None
+
+
+def _runway_upload_source_media(session, filename: str, blob: bytes) -> str:
+    base_url = _runway_base_url()
+    headers = _runway_headers()
+    create_resp = session.post(
+        f"{base_url}/v1/uploads",
+        headers=headers,
+        json={"filename": filename, "type": "ephemeral"},
+        timeout=120,
+    )
+    if create_resp.status_code >= 300:
+        raise HTTPException(
+            status_code=502,
+            detail=f"runway upload create failed: {create_resp.status_code} {create_resp.text[:500]}",
+        )
+
+    data = create_resp.json()
+    upload_url = data.get("uploadUrl") or data.get("url")
+    upload_fields = data.get("uploadFields") or data.get("fields") or {}
+    upload_headers = data.get("uploadHeaders") or {}
+    runway_uri = (
+        data.get("runwayUrl")
+        or data.get("runwayUri")
+        or data.get("assetUrl")
+        or data.get("assetUri")
+        or data.get("uri")
+    )
+    if not upload_url:
+        raise HTTPException(status_code=502, detail="runway upload response missing uploadUrl")
+
+    if upload_fields:
+        mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        files = {"file": (filename, blob, mime)}
+        upload_resp = session.post(upload_url, data=upload_fields, files=files, timeout=240)
+    else:
+        mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        put_headers = {"Content-Type": mime}
+        put_headers.update(upload_headers)
+        upload_resp = session.put(upload_url, data=blob, headers=put_headers, timeout=240)
+    if upload_resp.status_code >= 300:
+        raise HTTPException(
+            status_code=502,
+            detail=f"runway upload transfer failed: {upload_resp.status_code} {upload_resp.text[:500]}",
+        )
+
+    if runway_uri:
+        return runway_uri
+
+    upload_id = data.get("id")
+    if upload_id:
+        info_resp = session.get(f"{base_url}/v1/uploads/{upload_id}", headers=headers, timeout=120)
+        if info_resp.status_code < 300:
+            info = info_resp.json()
+            runway_uri = (
+                info.get("runwayUrl")
+                or info.get("runwayUri")
+                or info.get("assetUrl")
+                or info.get("assetUri")
+                or info.get("uri")
+            )
+    if not runway_uri:
+        raise HTTPException(status_code=502, detail="runway upload response missing runway URI")
+    return runway_uri
+
+
+def _generate_runway_video_assets(
+    assets_dir: Path,
+    topic: str,
+    tone: str,
+    style: str,
+    runway_mode: str,
+    runway_ratio: str,
+    runway_duration: int,
+    runway_seed: int | None,
+    source_media: tuple[str, bytes] | None,
+) -> list[Path]:
+    import requests
+
+    session = _runway_session()
+    base_url = _runway_base_url()
+    headers = _runway_headers()
+    poll_interval = float(os.getenv("RUNWAY_POLL_SEC", "3"))
+    poll_max = int(os.getenv("RUNWAY_POLL_MAX", "60"))
+    prompt = _runway_text_prompt(topic=topic, tone=tone, style=style)
+
+    payload: dict = {"promptText": prompt}
+    if runway_seed is not None:
+        payload["seed"] = runway_seed
+
+    if runway_mode == "text_to_video":
+        payload["model"] = os.getenv("RUNWAY_TEXT_MODEL", "gen4.5")
+        payload["ratio"] = runway_ratio
+        payload["duration"] = runway_duration
+        endpoint = "/v1/text_to_video"
+    elif runway_mode == "image_to_video":
+        if source_media is None:
+            raise HTTPException(status_code=400, detail="runway image_to_video requires source image")
+        source_name, source_blob = source_media
+        if not _is_image_file(source_name):
+            raise HTTPException(status_code=400, detail="runway image_to_video requires image file")
+        payload["model"] = os.getenv("RUNWAY_IMAGE_MODEL", "gen4_turbo")
+        payload["ratio"] = runway_ratio
+        payload["duration"] = runway_duration
+        payload["promptImage"] = _runway_upload_source_media(session, source_name, source_blob)
+        endpoint = "/v1/image_to_video"
+    else:
+        if source_media is None:
+            raise HTTPException(status_code=400, detail="runway video_to_video requires source video")
+        source_name, source_blob = source_media
+        if not _is_video_file(source_name):
+            raise HTTPException(status_code=400, detail="runway video_to_video requires video file")
+        payload["model"] = os.getenv("RUNWAY_VIDEO_MODEL", "gen4_aleph")
+        payload["videoUri"] = _runway_upload_source_media(session, source_name, source_blob)
+        endpoint = "/v1/video_to_video"
+
+    try:
+        create_resp = session.post(f"{base_url}{endpoint}", headers=headers, json=payload, timeout=180)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"runway request failed: {exc}") from exc
+    if create_resp.status_code >= 300:
+        raise HTTPException(
+            status_code=502,
+            detail=f"runway create failed: {create_resp.status_code} {create_resp.text[:500]}",
+        )
+
+    create_data = create_resp.json()
+    task_id = create_data.get("id") or create_data.get("taskId")
+    if not task_id:
+        raise HTTPException(status_code=502, detail="runway response missing task id")
+
+    task_data = create_data
+    for _ in range(poll_max):
+        status = str(task_data.get("status", "")).lower()
+        if status in {"succeeded", "completed"}:
+            break
+        if status in {"failed", "error", "canceled", "cancelled"}:
+            raise HTTPException(status_code=502, detail=f"runway task failed: {task_data}")
+        time.sleep(poll_interval)
+        try:
+            poll_resp = session.get(f"{base_url}/v1/tasks/{task_id}", headers=headers, timeout=120)
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"runway poll failed: {exc}") from exc
+        if poll_resp.status_code >= 300:
+            raise HTTPException(
+                status_code=502,
+                detail=f"runway poll failed: {poll_resp.status_code} {poll_resp.text[:500]}",
+            )
+        task_data = poll_resp.json()
+    else:
+        raise HTTPException(status_code=504, detail="runway polling timed out")
+
+    output_url = _pick_first_http_url(task_data.get("output")) or _pick_first_http_url(task_data)
+    if not output_url:
+        raise HTTPException(status_code=502, detail="runway task output missing downloadable URL")
+
+    try:
+        video_resp = session.get(output_url, timeout=240)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"runway output download failed: {exc}") from exc
+    if video_resp.status_code >= 300:
+        raise HTTPException(
+            status_code=502,
+            detail=f"runway output download failed: {video_resp.status_code}",
+        )
+
+    out = assets_dir / "runway_scene_01.mp4"
+    out.write_bytes(video_resp.content)
+    return [out]
+
+
 def _has_external_video_env() -> bool:
     return bool(os.getenv("VIDEO_PROVIDER_API_BASE") and os.getenv("VIDEO_PROVIDER_API_KEY"))
 
@@ -828,7 +1070,7 @@ async def render_upload(
     return {"ok": True, "jobId": job_id, **result, "message": "render completed"}
 
 
-@app.post("/generate-creative")
+@app.post("/generate-creative-legacy")
 def generate_creative(req: CreativeRequest):
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is empty")
@@ -886,3 +1128,131 @@ def generate_creative(req: CreativeRequest):
     if warning:
         response_payload["warning"] = warning
     return response_payload
+
+
+def _run_creative_request(
+    req: CreativeRequest,
+    source_media: tuple[str, bytes] | None = None,
+):
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="topic is empty")
+
+    output_dir = _resolve_output_dir()
+    job_id = uuid4().hex
+    actual_mode = req.generation_mode
+    warning: str | None = None
+    if req.generation_mode == "external_video" and not _has_external_video_env():
+        actual_mode = "mock"
+        warning = "external_video 환경 변수가 없어 mock 모드로 대체되었습니다."
+    if req.generation_mode == "replicate_video" and not _has_replicate_env():
+        actual_mode = "mock"
+        warning = "replicate_video 환경 변수가 없어 mock 모드로 대체되었습니다."
+    if req.generation_mode == "runway" and not _has_runway_env():
+        raise HTTPException(status_code=400, detail="RUNWAY_API_KEY is required for runway mode")
+    if req.generation_mode == "runway" and req.runway_mode in {"image_to_video", "video_to_video"} and source_media is None:
+        raise HTTPException(status_code=400, detail=f"runway {req.runway_mode} requires source_media")
+
+    _job_update(output_dir, job_id, {"status": "queued", "mode": actual_mode})
+    scene_count = 6
+    script_text = _build_script(topic=req.topic, tone=req.tone, duration=req.duration)
+
+    def assets_builder(dst: Path):
+        if actual_mode == "openai_image":
+            return _generate_openai_image_assets(dst, req.topic, req.tone, req.style, scene_count)
+        if actual_mode == "external_video":
+            return _generate_external_video_assets(dst, req.topic, req.tone, req.style, scene_count)
+        if actual_mode == "replicate_video":
+            return _generate_replicate_video_assets(dst, req.topic, req.tone, req.style, scene_count)
+        if actual_mode == "runway":
+            return _generate_runway_video_assets(
+                dst,
+                req.topic,
+                req.tone,
+                req.style,
+                req.runway_mode,
+                req.runway_ratio,
+                req.runway_duration,
+                req.runway_seed,
+                source_media,
+            )
+        return _generate_mock_assets(_resolve_ffmpeg_bin(), dst, req.duration, scene_count)
+
+    result = _run_pipeline(
+        job_id=job_id,
+        script_text=script_text,
+        assets_builder=assets_builder,
+        voice=req.voice,
+        duration=req.duration,
+        image_motion=req.image_motion,
+        voice_lang="ko-KR",
+        voice_voice="ko-KR-SunHiNeural",
+        mode=actual_mode,
+    )
+    preview = script_text.splitlines()[:8]
+    update_payload = {"script_preview": preview}
+    if warning:
+        update_payload["warning"] = warning
+    _job_update(output_dir, job_id, update_payload)
+
+    response_payload = {
+        "ok": True,
+        "jobId": job_id,
+        **result,
+        "mode": actual_mode,
+        "mode_requested": req.generation_mode,
+        "runway_mode": req.runway_mode if req.generation_mode == "runway" else None,
+        "script_preview": preview,
+        "message": "creative render completed",
+    }
+    if warning:
+        response_payload["warning"] = warning
+    return response_payload
+
+
+@app.post("/generate-creative")
+def generate_creative_v2(req: CreativeRequest):
+    return _run_creative_request(req=req, source_media=None)
+
+
+@app.post("/generate-creative-upload")
+async def generate_creative_upload(
+    topic: str = Form(...),
+    tone: str = Form("Calm and immersive"),
+    duration: float = Form(30.0),
+    style: str = Form("cinematic vertical short"),
+    voice: str = Form("edge"),
+    image_motion: str = Form("slow"),
+    generation_mode: str = Form("mock"),
+    runway_mode: str = Form("text_to_video"),
+    runway_ratio: str = Form("720:1280"),
+    runway_duration: int = Form(10),
+    runway_seed: str = Form(""),
+    source_media: UploadFile | None = File(None),
+):
+    seed_value: int | None = None
+    if runway_seed.strip():
+        try:
+            seed_value = int(runway_seed.strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="runway_seed must be integer") from exc
+
+    req = CreativeRequest(
+        topic=topic,
+        tone=tone,
+        duration=duration,
+        style=style,
+        voice=voice,
+        image_motion=image_motion,
+        generation_mode=generation_mode,
+        runway_mode=runway_mode,
+        runway_ratio=runway_ratio,
+        runway_duration=runway_duration,
+        runway_seed=seed_value,
+    )
+
+    source_payload: tuple[str, bytes] | None = None
+    if source_media is not None:
+        source_name = Path(source_media.filename or "source_media.bin").name
+        source_payload = (source_name, await source_media.read())
+
+    return _run_creative_request(req=req, source_media=source_payload)

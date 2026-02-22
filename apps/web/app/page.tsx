@@ -22,6 +22,7 @@ type CreativeResponse = {
   output_url?: string;
   mode?: string;
   mode_requested?: string;
+  runway_mode?: string;
   asset_count?: number;
   warning?: string;
   message?: string;
@@ -33,6 +34,11 @@ export default function HomePage() {
   const [durationSec, setDurationSec] = useState(30);
   const [style, setStyle] = useState("cinematic vertical short, natural light, realistic texture");
   const [generationMode, setGenerationMode] = useState("mock");
+  const [runwayMode, setRunwayMode] = useState("text_to_video");
+  const [runwayRatio, setRunwayRatio] = useState("720:1280");
+  const [runwayDuration, setRunwayDuration] = useState(10);
+  const [runwaySeed, setRunwaySeed] = useState("");
+  const [runwaySourceMedia, setRunwaySourceMedia] = useState<File | null>(null);
 
   const [voice, setVoice] = useState("edge");
   const [voiceLang, setVoiceLang] = useState("ko-KR");
@@ -101,18 +107,25 @@ export default function HomePage() {
     setLoadingCreative(true);
     setCreativeResult(null);
     try {
+      const form = new FormData();
+      form.append("topic", topic);
+      form.append("tone", tone);
+      form.append("duration", String(durationSec));
+      form.append("style", style);
+      form.append("voice", voice);
+      form.append("imageMotion", imageMotion);
+      form.append("generationMode", generationMode);
+      form.append("runwayMode", runwayMode);
+      form.append("runwayRatio", runwayRatio);
+      form.append("runwayDuration", String(runwayDuration));
+      form.append("runwaySeed", runwaySeed.trim());
+      if (runwaySourceMedia) {
+        form.append("sourceMedia", runwaySourceMedia, runwaySourceMedia.name);
+      }
+
       const res = await fetch("/api/creative", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic,
-          tone,
-          duration: durationSec,
-          style,
-          voice,
-          imageMotion,
-          generationMode
-        })
+        body: form
       });
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as CreativeResponse;
@@ -229,7 +242,45 @@ export default function HomePage() {
             <option value="openai_image">openai_image (이미지 생성 API)</option>
             <option value="external_video">external_video (외부 영상 생성 API)</option>
             <option value="replicate_video">replicate_video (Replicate 전용)</option>
+            <option value="runway">runway (Text/Image/Video to Video)</option>
           </select>
+
+          {generationMode === "runway" ? (
+            <>
+              <label htmlFor="runwayMode">Runway 모드</label>
+              <select id="runwayMode" value={runwayMode} onChange={(e) => setRunwayMode(e.target.value)}>
+                <option value="text_to_video">text_to_video</option>
+                <option value="image_to_video">image_to_video</option>
+                <option value="video_to_video">video_to_video</option>
+              </select>
+
+              <label htmlFor="runwayRatio">Runway 비율</label>
+              <input id="runwayRatio" value={runwayRatio} onChange={(e) => setRunwayRatio(e.target.value)} />
+
+              <label htmlFor="runwayDuration">Runway 클립 길이(2~10초)</label>
+              <input
+                id="runwayDuration"
+                type="number"
+                min={2}
+                max={10}
+                value={runwayDuration}
+                onChange={(e) => setRunwayDuration(Number(e.target.value) || 10)}
+              />
+
+              <label htmlFor="runwaySeed">Runway 시드(선택)</label>
+              <input id="runwaySeed" value={runwaySeed} onChange={(e) => setRunwaySeed(e.target.value)} />
+
+              <label htmlFor="runwaySourceMedia">
+                소스 파일(이미지/비디오 모드 필수)
+              </label>
+              <input
+                id="runwaySourceMedia"
+                type="file"
+                accept="image/*,video/*"
+                onChange={(e) => setRunwaySourceMedia(e.target.files?.[0] || null)}
+              />
+            </>
+          ) : null}
 
           <button type="button" disabled={loadingCreative} onClick={onCreateCreative}>
             {loadingCreative ? "생성 중..." : "무에서 유 생성 실행"}
@@ -255,6 +306,7 @@ export default function HomePage() {
               ) : null}
               <br />상태 조회: {creativeResult.statusCheckUrl || "(미설정)"}
               <br />모드: {creativeResult.mode || "-"} (요청: {creativeResult.mode_requested || "-"})
+              <br />Runway 모드: {creativeResult.runway_mode || "-"}
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
               <br />주의: {creativeResult.warning || "-"}
               <br />메시지: {creativeResult.message || "등록 완료"}

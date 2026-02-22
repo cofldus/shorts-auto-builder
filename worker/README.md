@@ -41,6 +41,62 @@ set REPLICATE_POLL_SEC=2
 set REPLICATE_POLL_MAX=60
 ```
 
+## runway provider
+
+```bash
+set RUNWAY_API_KEY=your_runway_key
+set RUNWAY_API_BASE=https://api.dev.runwayml.com
+set RUNWAY_API_VERSION=2024-11-06
+set RUNWAY_TEXT_MODEL=gen4.5
+set RUNWAY_IMAGE_MODEL=gen4_turbo
+set RUNWAY_VIDEO_MODEL=gen4_aleph
+set RUNWAY_POLL_SEC=3
+set RUNWAY_POLL_MAX=60
+set OUTBOUND_USE_ENV_PROXY=0
+```
+
+### Runway text_to_video
+
+```bash
+curl -X POST http://localhost:8000/generate-creative \
+  -H "Content-Type: application/json" \
+  -d "{\"topic\":\"도시 야경\",\"tone\":\"cinematic\",\"duration\":10,\"style\":\"vertical short\",\"voice\":\"none\",\"image_motion\":\"none\",\"generation_mode\":\"runway\",\"runway_mode\":\"text_to_video\",\"runway_ratio\":\"720:1280\",\"runway_duration\":5}"
+```
+
+### Runway image_to_video
+
+```bash
+curl -X POST http://localhost:8000/generate-creative-upload \
+  -F "topic=인물 클로즈업" \
+  -F "tone=cinematic" \
+  -F "duration=10" \
+  -F "style=vertical short" \
+  -F "voice=none" \
+  -F "image_motion=none" \
+  -F "generation_mode=runway" \
+  -F "runway_mode=image_to_video" \
+  -F "runway_ratio=720:1280" \
+  -F "runway_duration=5" \
+  -F "source_media=@demo_assets/your_image.jpg"
+```
+
+### Runway video_to_video
+
+```bash
+curl -X POST http://localhost:8000/generate-creative-upload \
+  -F "topic=질감 변환" \
+  -F "tone=cinematic" \
+  -F "duration=10" \
+  -F "style=vertical short" \
+  -F "voice=none" \
+  -F "image_motion=none" \
+  -F "generation_mode=runway" \
+  -F "runway_mode=video_to_video" \
+  -F "runway_ratio=720:1280" \
+  -F "runway_duration=5" \
+  -F "source_media=@assets/your_video.mp4"
+```
+
 ## 저장소 업로드(S3/R2)
 
 ```bash
