@@ -47,6 +47,7 @@ export default function HomePage() {
   const [jobResult, setJobResult] = useState<JobResponse | null>(null);
   const [creativeResult, setCreativeResult] = useState<CreativeResponse | null>(null);
   const [error, setError] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
 
   const canCreateJob = useMemo(() => script.trim().length > 0, [script]);
 
@@ -124,6 +125,19 @@ export default function HomePage() {
     }
   }
 
+  async function onCopyOutputUrl(url?: string) {
+    if (!url) {
+      setCopyMessage("복사할 URL이 없습니다.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyMessage("출력 URL을 복사했습니다.");
+    } catch {
+      setCopyMessage("복사에 실패했습니다. 브라우저 권한을 확인하세요.");
+    }
+  }
+
   return (
     <main>
       <h1>쇼츠 자동화 스튜디오</h1>
@@ -185,6 +199,19 @@ export default function HomePage() {
               작업 ID: {jobResult.jobId}
               <br />출력 경로: {jobResult.output_path || "(워커 응답 대기)"}
               <br />출력 URL: {jobResult.output_url || "(미설정)"}
+              {jobResult.output_url ? (
+                <>
+                  <br />
+                  <span className="result-actions">
+                    <a className="result-link" href={jobResult.output_url} target="_blank" rel="noreferrer">
+                      링크 열기
+                    </a>
+                    <button type="button" className="copy-button" onClick={() => onCopyOutputUrl(jobResult.output_url)}>
+                      URL 복사
+                    </button>
+                  </span>
+                </>
+              ) : null}
               <br />상태 조회: {jobResult.statusCheckUrl || "(미설정)"}
               <br />메시지: {jobResult.message || "등록 완료"}
             </p>
@@ -213,6 +240,19 @@ export default function HomePage() {
               작업 ID: {creativeResult.jobId}
               <br />출력 경로: {creativeResult.output_path || "(워커 응답 대기)"}
               <br />출력 URL: {creativeResult.output_url || "(미설정)"}
+              {creativeResult.output_url ? (
+                <>
+                  <br />
+                  <span className="result-actions">
+                    <a className="result-link" href={creativeResult.output_url} target="_blank" rel="noreferrer">
+                      링크 열기
+                    </a>
+                    <button type="button" className="copy-button" onClick={() => onCopyOutputUrl(creativeResult.output_url)}>
+                      URL 복사
+                    </button>
+                  </span>
+                </>
+              ) : null}
               <br />상태 조회: {creativeResult.statusCheckUrl || "(미설정)"}
               <br />모드: {creativeResult.mode || "-"} (요청: {creativeResult.mode_requested || "-"})
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
@@ -223,6 +263,7 @@ export default function HomePage() {
         </section>
       </div>
 
+      {copyMessage ? <p className="result">{copyMessage}</p> : null}
       {error ? <p className="result">오류: {error}</p> : null}
     </main>
   );

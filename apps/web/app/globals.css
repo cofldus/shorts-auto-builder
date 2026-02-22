@@ -97,3 +97,24 @@ button:disabled {
   margin-top: 10px;
   font-size: 0.9rem;
 }
+
+.result-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.result-link {
+  color: var(--accent);
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.copy-button {
+  width: auto;
+  margin-top: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
