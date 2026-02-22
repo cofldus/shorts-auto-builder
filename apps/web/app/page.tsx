@@ -21,7 +21,9 @@ type CreativeResponse = {
   output_path?: string;
   output_url?: string;
   mode?: string;
+  mode_requested?: string;
   asset_count?: number;
+  warning?: string;
   message?: string;
 };
 
@@ -212,8 +214,9 @@ export default function HomePage() {
               <br />출력 경로: {creativeResult.output_path || "(워커 응답 대기)"}
               <br />출력 URL: {creativeResult.output_url || "(미설정)"}
               <br />상태 조회: {creativeResult.statusCheckUrl || "(미설정)"}
-              <br />모드: {creativeResult.mode || "-"}
+              <br />모드: {creativeResult.mode || "-"} (요청: {creativeResult.mode_requested || "-"})
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
+              <br />주의: {creativeResult.warning || "-"}
               <br />메시지: {creativeResult.message || "등록 완료"}
             </p>
           ) : null}

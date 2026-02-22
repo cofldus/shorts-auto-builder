@@ -143,6 +143,89 @@ def _build_script(topic: str, tone: str, duration: float) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _normalize_script_text(raw: str) -> str:
+    allowed = {"start", "end", "subtitle", "narration"}
+    pairs: list[tuple[str, str]] = []
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("```"):
+            continue
+        if ":" not in s:
+            continue
+        key, value = s.split(":", 1)
+        key_norm = key.strip().lower().lstrip("\ufeff")
+        if key_norm not in allowed:
+            continue
+        pairs.append((key_norm, value.strip()))
+
+    segments: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for key, value in pairs:
+        if key == "start":
+            if "start" in current and "end" in current:
+                segments.append(current)
+            current = {"start": value}
+            continue
+        if "start" not in current:
+            continue
+        current[key] = value
+
+    if "start" in current and "end" in current:
+        segments.append(current)
+
+    if not segments:
+        raise HTTPException(
+            status_code=400,
+            detail="script 형식이 올바르지 않습니다. start/end가 포함된 세그먼트를 확인하세요.",
+        )
+
+    lines: list[str] = []
+    for seg in segments:
+        lines.append(f"start: {seg['start']}")
+        lines.append(f"end: {seg['end']}")
+        if seg.get("subtitle"):
+            lines.append(f"subtitle: {seg['subtitle']}")
+        if seg.get("narration"):
+            lines.append(f"narration: {seg['narration']}")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _parse_time_to_seconds(value: str) -> float | None:
+    s = value.strip()
+    if not s:
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        pass
+
+    parts = s.split(":")
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError:
+        return None
+
+    if len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    if len(nums) == 3:
+        return nums[0] * 3600 + nums[1] * 60 + nums[2]
+    return None
+
+
+def _script_max_end_seconds(script_text: str) -> float:
+    max_end = 0.0
+    for line in script_text.splitlines():
+        s = line.strip()
+        if not s.lower().startswith("end:"):
+            continue
+        _, value = s.split(":", 1)
+        sec = _parse_time_to_seconds(value)
+        if sec is not None and sec > max_end:
+            max_end = sec
+    return max_end
+
+
 def _build_scene_prompts(topic: str, tone: str, style: str, count: int) -> list[str]:
     prompts: list[str] = []
     for idx in range(count):
@@ -411,6 +494,14 @@ def _generate_replicate_video_assets(
     return generated
 
 
+def _has_external_video_env() -> bool:
+    return bool(os.getenv("VIDEO_PROVIDER_API_BASE") and os.getenv("VIDEO_PROVIDER_API_KEY"))
+
+
+def _has_replicate_env() -> bool:
+    return bool(os.getenv("REPLICATE_API_TOKEN"))
+
+
 def _to_public_url(path: Path) -> str | None:
     public_base = os.getenv("WORKER_PUBLIC_BASE_URL", "").rstrip("/")
     if not public_base:
@@ -611,12 +702,16 @@ async def render_upload(
             created.append(out)
         return created
 
+    normalized_script = _normalize_script_text(script_text)
+    script_max_end = _script_max_end_seconds(normalized_script)
+    effective_duration = duration if duration >= script_max_end else script_max_end
+
     result = _run_pipeline(
         job_id=job_id,
-        script_text=script_text,
+        script_text=normalized_script,
         assets_builder=assets_builder,
         voice=voice,
-        duration=duration,
+        duration=effective_duration,
         image_motion=image_motion,
         voice_lang=voice_lang,
         voice_voice=voice_voice,
@@ -632,16 +727,25 @@ def generate_creative(req: CreativeRequest):
 
     output_dir = _resolve_output_dir()
     job_id = uuid4().hex
-    _job_update(output_dir, job_id, {"status": "queued", "mode": req.generation_mode})
+    actual_mode = req.generation_mode
+    warning: str | None = None
+    if req.generation_mode == "external_video" and not _has_external_video_env():
+        actual_mode = "mock"
+        warning = "external_video 환경 변수가 없어 mock 모드로 대체되었습니다."
+    if req.generation_mode == "replicate_video" and not _has_replicate_env():
+        actual_mode = "mock"
+        warning = "replicate_video 환경 변수가 없어 mock 모드로 대체되었습니다."
+
+    _job_update(output_dir, job_id, {"status": "queued", "mode": actual_mode})
     scene_count = 6
     script_text = _build_script(topic=req.topic, tone=req.tone, duration=req.duration)
 
     def assets_builder(dst: Path):
-        if req.generation_mode == "openai_image":
+        if actual_mode == "openai_image":
             return _generate_openai_image_assets(dst, req.topic, req.tone, req.style, scene_count)
-        if req.generation_mode == "external_video":
+        if actual_mode == "external_video":
             return _generate_external_video_assets(dst, req.topic, req.tone, req.style, scene_count)
-        if req.generation_mode == "replicate_video":
+        if actual_mode == "replicate_video":
             return _generate_replicate_video_assets(dst, req.topic, req.tone, req.style, scene_count)
         return _generate_mock_assets(_resolve_ffmpeg_bin(), dst, req.duration, scene_count)
 
@@ -654,15 +758,23 @@ def generate_creative(req: CreativeRequest):
         image_motion=req.image_motion,
         voice_lang="ko-KR",
         voice_voice="ko-KR-SunHiNeural",
-        mode=req.generation_mode,
+        mode=actual_mode,
     )
     preview = script_text.splitlines()[:8]
-    _job_update(output_dir, job_id, {"script_preview": preview})
-    return {
+    update_payload = {"script_preview": preview}
+    if warning:
+        update_payload["warning"] = warning
+    _job_update(output_dir, job_id, update_payload)
+
+    response_payload = {
         "ok": True,
         "jobId": job_id,
         **result,
-        "mode": req.generation_mode,
+        "mode": actual_mode,
+        "mode_requested": req.generation_mode,
         "script_preview": preview,
         "message": "creative render completed",
     }
+    if warning:
+        response_payload["warning"] = warning
+    return response_payload
