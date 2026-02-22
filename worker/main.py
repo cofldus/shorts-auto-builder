@@ -13,6 +13,34 @@ from uuid import uuid4
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+
+def _load_dotenv_file() -> None:
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+        if key in os.environ and os.environ[key]:
+            continue
+        if len(value) >= 2 and ((value[0] == value[-1] == '"') or (value[0] == value[-1] == "'")):
+            value = value[1:-1]
+        os.environ[key] = value
+
+
+_load_dotenv_file()
+
 app = FastAPI(title="shorts-render-worker")
 
 
@@ -529,9 +557,22 @@ def _upload_to_s3(local_file: Path, object_key: str) -> str:
         kwargs["region_name"] = region
     if endpoint:
         kwargs["endpoint_url"] = endpoint
+    use_env_proxy = os.getenv("S3_USE_ENV_PROXY", "0").lower() in {"1", "true", "yes"}
+    if not use_env_proxy:
+        try:
+            from botocore.config import Config as BotoConfig
 
-    s3 = boto3.client("s3", **kwargs)
-    s3.upload_file(str(local_file), bucket, object_key, ExtraArgs={"ContentType": "video/mp4"})
+            kwargs["config"] = BotoConfig(proxies={})
+        except Exception:
+            pass
+
+    try:
+        s3 = boto3.client("s3", **kwargs)
+        s3.upload_file(str(local_file), bucket, object_key, ExtraArgs={"ContentType": "video/mp4"})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"S3 upload failed: {exc}") from exc
 
     if url_mode == "presigned":
         return s3.generate_presigned_url(
@@ -612,7 +653,22 @@ def _run_pipeline(
                 status_code=500,
                 detail={"stderr": completed.stderr[-4000:], "stdout": completed.stdout[-4000:]},
             )
-        published = _publish_output(output_dir, temp_output, f"{job_id}.mp4")
+        try:
+            published = _publish_output(output_dir, temp_output, f"{job_id}.mp4")
+        except HTTPException as exc:
+            _job_update(
+                output_dir,
+                job_id,
+                {"status": "failed", "error": str(exc.detail)[:2000]},
+            )
+            raise
+        except Exception as exc:
+            _job_update(
+                output_dir,
+                job_id,
+                {"status": "failed", "error": str(exc)[:2000]},
+            )
+            raise HTTPException(status_code=500, detail=f"output publish failed: {exc}") from exc
 
     payload = {"status": "completed", **published, "asset_count": len(generated_assets)}
     _job_update(output_dir, job_id, payload)
