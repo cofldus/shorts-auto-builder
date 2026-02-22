@@ -28,7 +28,7 @@ def _load_dotenv_file() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        key = key.strip()
+        key = key.strip().lstrip("\ufeff")
         value = value.strip()
         if not key:
             continue
@@ -70,6 +70,10 @@ def _resolve_output_dir() -> Path:
     output_dir = Path(os.getenv("WORKER_OUTPUT_DIR", "worker_outputs"))
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
+
+
+def _use_env_proxy() -> bool:
+    return os.getenv("OUTBOUND_USE_ENV_PROXY", "0").lower() in {"1", "true", "yes"}
 
 
 def _jobs_dir(output_dir: Path) -> Path:
@@ -313,21 +317,25 @@ def _generate_openai_image_assets(
     count: int,
 ) -> list[Path]:
     try:
+        import httpx
         from openai import OpenAI
     except ImportError as exc:
-        raise HTTPException(status_code=500, detail="openai package is required") from exc
+        raise HTTPException(status_code=500, detail="openai/httpx package is required") from exc
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="OPENAI_API_KEY is required")
 
     model_name = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, http_client=httpx.Client(trust_env=_use_env_proxy(), timeout=120))
 
     prompts = _build_scene_prompts(topic=topic, tone=tone, style=style, count=count)
     generated: list[Path] = []
     for idx, prompt in enumerate(prompts):
-        response = client.images.generate(model=model_name, prompt=prompt, size="1024x1536")
+        try:
+            response = client.images.generate(model=model_name, prompt=prompt, size="1024x1536")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"openai image request failed: {exc}") from exc
         image_b64 = None
         if response.data and len(response.data) > 0:
             image_b64 = getattr(response.data[0], "b64_json", None)
@@ -352,6 +360,9 @@ def _generate_external_video_assets(
     except ImportError as exc:
         raise HTTPException(status_code=500, detail="requests package is required") from exc
 
+    session = requests.Session()
+    session.trust_env = _use_env_proxy()
+
     base_url = os.getenv("VIDEO_PROVIDER_API_BASE", "").rstrip("/")
     api_key = os.getenv("VIDEO_PROVIDER_API_KEY", "")
     create_path = os.getenv("VIDEO_PROVIDER_CREATE_PATH", "/v1/video/jobs")
@@ -371,12 +382,15 @@ def _generate_external_video_assets(
 
     for idx, prompt in enumerate(prompts):
         create_url = f"{base_url}{create_path}"
-        create_resp = requests.post(
-            create_url,
-            headers=headers,
-            json={"prompt": prompt, "aspect_ratio": "9:16", "duration": 5},
-            timeout=60,
-        )
+        try:
+            create_resp = session.post(
+                create_url,
+                headers=headers,
+                json={"prompt": prompt, "aspect_ratio": "9:16", "duration": 5},
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"provider request failed: {exc}") from exc
         if create_resp.status_code >= 300:
             raise HTTPException(
                 status_code=502,
@@ -393,7 +407,10 @@ def _generate_external_video_assets(
         if not video_url:
             for _ in range(poll_max):
                 poll_url = f"{base_url}{status_path.format(job_id=job_id)}"
-                poll_resp = requests.get(poll_url, headers=headers, timeout=60)
+                try:
+                    poll_resp = session.get(poll_url, headers=headers, timeout=60)
+                except requests.RequestException as exc:
+                    raise HTTPException(status_code=502, detail=f"provider poll request failed: {exc}") from exc
                 if poll_resp.status_code >= 300:
                     raise HTTPException(
                         status_code=502,
@@ -412,7 +429,10 @@ def _generate_external_video_assets(
             raise HTTPException(status_code=504, detail="provider polling timed out")
 
         out = assets_dir / f"provider_scene_{idx + 1:02d}.mp4"
-        video_resp = requests.get(video_url, timeout=120)
+        try:
+            video_resp = session.get(video_url, timeout=120)
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"provider video download request failed: {exc}") from exc
         if video_resp.status_code >= 300:
             raise HTTPException(
                 status_code=502,
@@ -435,6 +455,9 @@ def _generate_replicate_video_assets(
         import requests
     except ImportError as exc:
         raise HTTPException(status_code=500, detail="requests package is required") from exc
+
+    session = requests.Session()
+    session.trust_env = _use_env_proxy()
 
     token = os.getenv("REPLICATE_API_TOKEN", "")
     model = os.getenv("REPLICATE_MODEL", "kwaivgi/kling-v1.6-pro")
@@ -461,7 +484,10 @@ def _generate_replicate_video_assets(
         else:
             create_url = f"https://api.replicate.com/v1/models/{model}/predictions"
 
-        create_resp = requests.post(create_url, headers=headers, json=payload, timeout=120)
+        try:
+            create_resp = session.post(create_url, headers=headers, json=payload, timeout=120)
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"replicate request failed: {exc}") from exc
         if create_resp.status_code >= 300:
             raise HTTPException(
                 status_code=502,
@@ -479,11 +505,14 @@ def _generate_replicate_video_assets(
             if status in {"succeeded", "failed", "canceled"}:
                 break
             time.sleep(poll_interval)
-            poll_resp = requests.get(
-                f"https://api.replicate.com/v1/predictions/{pred_id}",
-                headers=headers,
-                timeout=120,
-            )
+            try:
+                poll_resp = session.get(
+                    f"https://api.replicate.com/v1/predictions/{pred_id}",
+                    headers=headers,
+                    timeout=120,
+                )
+            except requests.RequestException as exc:
+                raise HTTPException(status_code=502, detail=f"replicate poll request failed: {exc}") from exc
             if poll_resp.status_code >= 300:
                 raise HTTPException(
                     status_code=502,
@@ -510,7 +539,10 @@ def _generate_replicate_video_assets(
             raise HTTPException(status_code=502, detail="replicate output missing video url")
 
         out = assets_dir / f"replicate_scene_{idx + 1:02d}.mp4"
-        video_resp = requests.get(video_url, timeout=120)
+        try:
+            video_resp = session.get(video_url, timeout=120)
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"replicate video download request failed: {exc}") from exc
         if video_resp.status_code >= 300:
             raise HTTPException(
                 status_code=502,
@@ -621,58 +653,78 @@ def _run_pipeline(
     output_dir = _resolve_output_dir()
     _job_update(output_dir, job_id, {"status": "processing", "mode": mode})
 
-    with tempfile.TemporaryDirectory(prefix="worker_job_") as tmp_dir:
-        tmp = Path(tmp_dir)
-        script_path = tmp / "script.txt"
-        assets_dir = tmp / "assets"
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(script_text, encoding="utf-8")
+    try:
+        with tempfile.TemporaryDirectory(prefix="worker_job_") as tmp_dir:
+            tmp = Path(tmp_dir)
+            script_path = tmp / "script.txt"
+            assets_dir = tmp / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(script_text, encoding="utf-8")
 
-        generated_assets = assets_builder(assets_dir)
-        temp_output = tmp / "output.mp4"
-        completed = _run_render(
-            script_path=script_path,
-            assets_path=assets_dir,
-            output_path=temp_output,
-            voice=voice,
-            duration=duration,
-            image_motion=image_motion,
-            voice_lang=voice_lang,
-            voice_voice=voice_voice,
-        )
-        if completed.returncode != 0:
+            generated_assets = assets_builder(assets_dir)
+            temp_output = tmp / "output.mp4"
+            completed = _run_render(
+                script_path=script_path,
+                assets_path=assets_dir,
+                output_path=temp_output,
+                voice=voice,
+                duration=duration,
+                image_motion=image_motion,
+                voice_lang=voice_lang,
+                voice_voice=voice_voice,
+            )
+            if completed.returncode != 0:
+                _job_update(
+                    output_dir,
+                    job_id,
+                    {
+                        "status": "failed",
+                        "error": (completed.stderr or completed.stdout or "render failed")[-2000:],
+                    },
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail={"stderr": completed.stderr[-4000:], "stdout": completed.stdout[-4000:]},
+                )
+            try:
+                published = _publish_output(output_dir, temp_output, f"{job_id}.mp4")
+            except HTTPException as exc:
+                _job_update(
+                    output_dir,
+                    job_id,
+                    {"status": "failed", "error": str(exc.detail)[:2000]},
+                )
+                raise
+            except Exception as exc:
+                _job_update(
+                    output_dir,
+                    job_id,
+                    {"status": "failed", "error": str(exc)[:2000]},
+                )
+                raise HTTPException(status_code=500, detail=f"output publish failed: {exc}") from exc
+
+        payload = {"status": "completed", **published, "asset_count": len(generated_assets)}
+        _job_update(output_dir, job_id, payload)
+        return payload
+    except HTTPException as exc:
+        existing = _job_read(output_dir, job_id)
+        if existing.get("status") != "failed":
             _job_update(
                 output_dir,
                 job_id,
                 {
                     "status": "failed",
-                    "error": (completed.stderr or completed.stdout or "render failed")[-2000:],
+                    "error": str(exc.detail)[:2000],
                 },
             )
-            raise HTTPException(
-                status_code=500,
-                detail={"stderr": completed.stderr[-4000:], "stdout": completed.stdout[-4000:]},
-            )
-        try:
-            published = _publish_output(output_dir, temp_output, f"{job_id}.mp4")
-        except HTTPException as exc:
-            _job_update(
-                output_dir,
-                job_id,
-                {"status": "failed", "error": str(exc.detail)[:2000]},
-            )
-            raise
-        except Exception as exc:
-            _job_update(
-                output_dir,
-                job_id,
-                {"status": "failed", "error": str(exc)[:2000]},
-            )
-            raise HTTPException(status_code=500, detail=f"output publish failed: {exc}") from exc
-
-    payload = {"status": "completed", **published, "asset_count": len(generated_assets)}
-    _job_update(output_dir, job_id, payload)
-    return payload
+        raise
+    except Exception as exc:
+        _job_update(
+            output_dir,
+            job_id,
+            {"status": "failed", "error": str(exc)[:2000]},
+        )
+        raise HTTPException(status_code=500, detail=f"pipeline failed: {exc}") from exc
 
 
 @app.get("/health")
