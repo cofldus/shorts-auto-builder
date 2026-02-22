@@ -18,12 +18,14 @@ type CreativeResponse = {
   jobId: string;
   workerUrl: string;
   statusCheckUrl?: string;
+  status?: string;
   output_path?: string;
   output_url?: string;
   mode?: string;
   mode_requested?: string;
   runway_mode?: string;
   asset_count?: number;
+  error?: string;
   warning?: string;
   message?: string;
 };
@@ -56,6 +58,47 @@ export default function HomePage() {
   const [copyMessage, setCopyMessage] = useState("");
 
   const canCreateJob = useMemo(() => script.trim().length > 0, [script]);
+
+  async function pollCreativeStatus(statusCheckUrl: string, jobId: string) {
+    for (let i = 0; i < 240; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const res = await fetch(statusCheckUrl, { cache: "no-store" });
+        if (!res.ok) continue;
+        const job = await res.json();
+        setCreativeResult((prev) => ({
+          ok: prev?.ok ?? true,
+          jobId,
+          workerUrl: prev?.workerUrl ?? "",
+          statusCheckUrl,
+          status: job.status ?? prev?.status,
+          output_path: job.output_path ?? prev?.output_path,
+          output_url: job.output_url ?? prev?.output_url,
+          mode: job.mode ?? prev?.mode,
+          mode_requested: prev?.mode_requested,
+          runway_mode: prev?.runway_mode,
+          asset_count: job.asset_count ?? prev?.asset_count,
+          warning: job.warning ?? prev?.warning,
+          error: job.error ?? prev?.error,
+          message:
+            job.status === "completed"
+              ? "creative render completed"
+              : job.status === "failed"
+                ? `실패: ${job.error ?? "unknown"}`
+                : "작업 진행 중..."
+        }));
+
+        if (job.status === "completed") return;
+        if (job.status === "failed") {
+          setError(`생성 실패: ${job.error ?? "unknown"}`);
+          return;
+        }
+      } catch {
+        continue;
+      }
+    }
+    setError("작업 상태 조회 시간이 초과되었습니다. 상태 조회 링크로 확인하세요.");
+  }
 
   async function onGenerateScript() {
     setError("");
@@ -130,6 +173,9 @@ export default function HomePage() {
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as CreativeResponse;
       setCreativeResult(data);
+      if (data.statusCheckUrl && data.status !== "completed") {
+        void pollCreativeStatus(data.statusCheckUrl, data.jobId);
+      }
       if (!script.trim()) await onGenerateScript();
     } catch (e) {
       setError(e instanceof Error ? e.message : "생성형 작업 등록 실패");
@@ -305,9 +351,11 @@ export default function HomePage() {
                 </>
               ) : null}
               <br />상태 조회: {creativeResult.statusCheckUrl || "(미설정)"}
+              <br />상태: {creativeResult.status || "-"}
               <br />모드: {creativeResult.mode || "-"} (요청: {creativeResult.mode_requested || "-"})
               <br />Runway 모드: {creativeResult.runway_mode || "-"}
               <br />생성 자산 수: {creativeResult.asset_count ?? "-"}
+              <br />오류: {creativeResult.error || "-"}
               <br />주의: {creativeResult.warning || "-"}
               <br />메시지: {creativeResult.message || "등록 완료"}
             </p>

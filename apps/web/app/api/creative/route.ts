@@ -119,12 +119,12 @@ export async function POST(req: NextRequest) {
           if (params.sourceMedia) {
             workerForm.append("source_media", params.sourceMedia, params.sourceMedia.name);
           }
-          return fetch(`${workerUrl}/generate-creative-upload`, {
+          return fetch(`${workerUrl}/generate-creative-upload-async`, {
             method: "POST",
             body: workerForm
           });
         })()
-      : await fetch(`${workerUrl}/generate-creative`, {
+      : await fetch(`${workerUrl}/generate-creative-async`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

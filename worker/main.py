@@ -11,7 +11,7 @@ import tempfile
 import time
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 
@@ -708,7 +708,7 @@ def _generate_runway_video_assets(
     base_url = _runway_base_url()
     headers = _runway_headers()
     poll_interval = float(os.getenv("RUNWAY_POLL_SEC", "3"))
-    poll_max = int(os.getenv("RUNWAY_POLL_MAX", "60"))
+    poll_max = int(os.getenv("RUNWAY_POLL_MAX", "120"))
     prompt = _runway_text_prompt(topic=topic, tone=tone, style=style)
 
     payload: dict = {"promptText": prompt}
@@ -775,7 +775,10 @@ def _generate_runway_video_assets(
             )
         task_data = poll_resp.json()
     else:
-        raise HTTPException(status_code=504, detail="runway polling timed out")
+        raise HTTPException(
+            status_code=504,
+            detail=f"runway polling timed out (task_id={task_id}, increase RUNWAY_POLL_MAX)",
+        )
 
     output_url = _pick_first_http_url(task_data.get("output")) or _pick_first_http_url(task_data)
     if not output_url:
@@ -1133,12 +1136,13 @@ def generate_creative(req: CreativeRequest):
 def _run_creative_request(
     req: CreativeRequest,
     source_media: tuple[str, bytes] | None = None,
+    job_id: str | None = None,
 ):
     if not req.topic.strip():
         raise HTTPException(status_code=400, detail="topic is empty")
 
     output_dir = _resolve_output_dir()
-    job_id = uuid4().hex
+    job_id = job_id or uuid4().hex
     actual_mode = req.generation_mode
     warning: str | None = None
     if req.generation_mode == "external_video" and not _has_external_video_env():
@@ -1256,3 +1260,94 @@ async def generate_creative_upload(
         source_payload = (source_name, await source_media.read())
 
     return _run_creative_request(req=req, source_media=source_payload)
+
+
+def _enqueue_creative_request(
+    background_tasks: BackgroundTasks,
+    req: CreativeRequest,
+    source_media: tuple[str, bytes] | None = None,
+) -> dict:
+    output_dir = _resolve_output_dir()
+    job_id = uuid4().hex
+    _job_update(
+        output_dir,
+        job_id,
+        {
+            "status": "queued",
+            "mode": req.generation_mode,
+            "mode_requested": req.generation_mode,
+            "runway_mode": req.runway_mode if req.generation_mode == "runway" else None,
+        },
+    )
+
+    def _runner():
+        try:
+            _run_creative_request(req=req, source_media=source_media, job_id=job_id)
+        except HTTPException as exc:
+            _job_update(output_dir, job_id, {"status": "failed", "error": str(exc.detail)[:2000]})
+        except Exception as exc:
+            _job_update(output_dir, job_id, {"status": "failed", "error": str(exc)[:2000]})
+
+    background_tasks.add_task(_runner)
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "status": "queued",
+        "mode_requested": req.generation_mode,
+        "runway_mode": req.runway_mode if req.generation_mode == "runway" else None,
+        "message": "creative job queued",
+    }
+
+
+@app.post("/generate-creative-async")
+def generate_creative_async(req: CreativeRequest, background_tasks: BackgroundTasks):
+    return _enqueue_creative_request(background_tasks=background_tasks, req=req, source_media=None)
+
+
+@app.post("/generate-creative-upload-async")
+async def generate_creative_upload_async(
+    background_tasks: BackgroundTasks,
+    topic: str = Form(...),
+    tone: str = Form("Calm and immersive"),
+    duration: float = Form(30.0),
+    style: str = Form("cinematic vertical short"),
+    voice: str = Form("edge"),
+    image_motion: str = Form("slow"),
+    generation_mode: str = Form("mock"),
+    runway_mode: str = Form("text_to_video"),
+    runway_ratio: str = Form("720:1280"),
+    runway_duration: int = Form(10),
+    runway_seed: str = Form(""),
+    source_media: UploadFile | None = File(None),
+):
+    seed_value: int | None = None
+    if runway_seed.strip():
+        try:
+            seed_value = int(runway_seed.strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="runway_seed must be integer") from exc
+
+    req = CreativeRequest(
+        topic=topic,
+        tone=tone,
+        duration=duration,
+        style=style,
+        voice=voice,
+        image_motion=image_motion,
+        generation_mode=generation_mode,
+        runway_mode=runway_mode,
+        runway_ratio=runway_ratio,
+        runway_duration=runway_duration,
+        runway_seed=seed_value,
+    )
+
+    source_payload: tuple[str, bytes] | None = None
+    if source_media is not None:
+        source_name = Path(source_media.filename or "source_media.bin").name
+        source_payload = (source_name, await source_media.read())
+
+    return _enqueue_creative_request(
+        background_tasks=background_tasks,
+        req=req,
+        source_media=source_payload,
+    )

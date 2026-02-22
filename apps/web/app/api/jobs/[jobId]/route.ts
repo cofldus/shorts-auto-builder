@@ -16,7 +16,7 @@ export async function GET(_: NextRequest, { params }: { params: { jobId: string 
     if (!response.ok) {
       const text = await response.text();
       return NextResponse.json(
-        { error: "워커 상태 조회 실패", workerStatus: response.status, detail: text },
+        { error: "작업 상태 조회 실패", workerStatus: response.status, detail: text },
         { status: 502 }
       );
     }
@@ -26,7 +26,7 @@ export async function GET(_: NextRequest, { params }: { params: { jobId: string 
   } catch (error) {
     return NextResponse.json(
       {
-        error: "워커 연결 실패",
+        error: "작업 연결 실패",
         detail: error instanceof Error ? error.message : "unknown"
       },
       { status: 502 }

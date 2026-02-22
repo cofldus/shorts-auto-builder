@@ -183,3 +183,6 @@ ffmpeg -hide_banner -filters
 - 상태 조회:
   - 워커 `GET /jobs/{job_id}`
   - 웹 `GET /api/jobs/{jobId}`
+- 비동기 처리:
+  - 생성형 요청은 즉시 `jobId`를 반환하고 백그라운드로 처리됩니다.
+  - UI는 `statusCheckUrl`을 주기적으로 조회해 `queued -> processing -> completed/failed`로 갱신합니다.

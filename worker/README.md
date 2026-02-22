@@ -20,6 +20,30 @@ curl -X POST http://localhost:8000/generate-creative \
   -d "{\"topic\":\"직장인 위로\",\"tone\":\"따뜻하고 진정성 있게\",\"duration\":30,\"style\":\"cinematic vertical short\",\"voice\":\"edge\",\"image_motion\":\"slow\",\"generation_mode\":\"mock\"}"
 ```
 
+## 생성형 비동기 렌더(권장)
+
+```bash
+curl -X POST http://localhost:8000/generate-creative-async \
+  -H "Content-Type: application/json" \
+  -d "{\"topic\":\"직장인 위로\",\"tone\":\"따뜻하고 진정성 있게\",\"duration\":30,\"style\":\"cinematic vertical short\",\"voice\":\"edge\",\"image_motion\":\"slow\",\"generation_mode\":\"runway\",\"runway_mode\":\"text_to_video\",\"runway_ratio\":\"720:1280\",\"runway_duration\":5}"
+
+curl http://localhost:8000/jobs/{job_id}
+```
+
+```bash
+curl -X POST http://localhost:8000/generate-creative-upload-async \
+  -F "topic=인물 클로즈업" \
+  -F "tone=cinematic" \
+  -F "duration=10" \
+  -F "style=vertical short" \
+  -F "voice=none" \
+  -F "generation_mode=runway" \
+  -F "runway_mode=image_to_video" \
+  -F "runway_ratio=720:1280" \
+  -F "runway_duration=5" \
+  -F "source_media=@demo_assets/your_image.jpg"
+```
+
 ## external_video provider
 
 ```bash
